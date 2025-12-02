@@ -32,3 +32,18 @@ def register_zone_routes(app: FastAPI) -> None:
         if provider == "cpcb_data_gov":
             return await fetch_srinagar_gov()
         return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+    @app.get("/zones")
+    async def list_zones() -> dict:
+        return {
+            "zones": [
+                {
+                    "id": z["id"],
+                    "name": z["name"],
+                    "provider": z.get("provider"),
+                    "lat": z.get("lat"),
+                    "lon": z.get("lon"),
+                }
+                for z in ZONES.values()
+            ]
+        }
