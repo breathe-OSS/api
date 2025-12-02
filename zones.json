@@ -1,0 +1,142 @@
+{
+  "srinagar_gov": {
+    "id": "srinagar_gov",
+    "name": "srinagar (rajbagh - jkspcb)",
+    "provider": "cpcb_data_gov",
+    "lat": 34.066206,
+    "lon": 74.819820
+  },
+  "jammu_gandhinagar": {
+    "id": "jammu_gandhinagar",
+    "name": "gandhi nagar / trikuta nagar, jammu",
+    "provider": "openweather",
+    "lat": 32.7100,
+    "lon": 74.8605
+  },
+  "budgam_town": {
+    "id": "budgam_town",
+    "name": "budgam town",
+    "provider": "openweather",
+    "lat": 34.0150,
+    "lon": 74.7220
+  },
+  "ganderbal_town": {
+    "id": "ganderbal_town",
+    "name": "ganderbal town",
+    "provider": "openweather",
+    "lat": 34.2290,
+    "lon": 74.7787
+  },
+  "anantnag_city": {
+    "id": "anantnag_city",
+    "name": "anantnag city",
+    "provider": "openweather",
+    "lat": 33.7386,
+    "lon": 75.1487
+  },
+  "pulwama_town": {
+    "id": "pulwama_town",
+    "name": "pulwama town",
+    "provider": "openweather",
+    "lat": 33.8740,
+    "lon": 74.8975
+  },
+  "shopian_town": {
+    "id": "shopian_town",
+    "name": "shopian town",
+    "provider": "openweather",
+    "lat": 33.7200,
+    "lon": 74.8333
+  },
+  "kulgam_town": {
+    "id": "kulgam_town",
+    "name": "kulgam town",
+    "provider": "openweather",
+    "lat": 33.6440,
+    "lon": 75.0186
+  },
+  "baramulla_town": {
+    "id": "baramulla_town",
+    "name": "baramulla town",
+    "provider": "openweather",
+    "lat": 34.2090,
+    "lon": 74.3500
+  },
+  "kupwara_town": {
+    "id": "kupwara_town",
+    "name": "kupwara town",
+    "provider": "openweather",
+    "lat": 34.5312,
+    "lon": 74.2550
+  },
+  "bandipora_town": {
+    "id": "bandipora_town",
+    "name": "bandipora town",
+    "provider": "openweather",
+    "lat": 34.4175,
+    "lon": 74.6499
+  },
+  "samba_town": {
+    "id": "samba_town",
+    "name": "samba town",
+    "provider": "openweather",
+    "lat": 32.5623,
+    "lon": 75.1190
+  },
+  "kathua_town": {
+    "id": "kathua_town",
+    "name": "kathua town",
+    "provider": "openweather",
+    "lat": 32.3670,
+    "lon": 75.5230
+  },
+  "udhampur_city": {
+    "id": "udhampur_city",
+    "name": "udhampur city",
+    "provider": "openweather",
+    "lat": 32.9240,
+    "lon": 75.1357
+  },
+  "reasi_town": {
+    "id": "reasi_town",
+    "name": "reasi town",
+    "provider": "openweather",
+    "lat": 33.0803,
+    "lon": 74.8383
+  },
+  "ramban_town": {
+    "id": "ramban_town",
+    "name": "ramban town",
+    "provider": "openweather",
+    "lat": 33.2420,
+    "lon": 75.2450
+  },
+  "doda_town": {
+    "id": "doda_town",
+    "name": "doda town",
+    "provider": "openweather",
+    "lat": 33.1320,
+    "lon": 75.5670
+  },
+  "kishtwar_town": {
+    "id": "kishtwar_town",
+    "name": "kishtwar town",
+    "provider": "openweather",
+    "lat": 33.3103,
+    "lon": 75.7665
+  },
+  "rajouri_town": {
+    "id": "rajouri_town",
+    "name": "rajouri town",
+    "provider": "openweather",
+    "lat": 33.3750,
+    "lon": 74.3150
+  },
+  "poonch_town": {
+    "id": "poonch_town",
+    "name": "poonch town",
+    "provider": "openweather",
+    "lat": 33.7690,
+    "lon": 74.0920
+  }
+}

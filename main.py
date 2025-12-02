@@ -2,6 +2,7 @@ import os
 from typing import Dict, Any, Optional, Tuple
 
 import httpx
+import json
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 
@@ -19,208 +20,17 @@ if not owm_api_key:
 
 ###### ZONE DEFINITIONS ######
 
-ZONES = {
-    "srinagar_gov": {
-        "id": "srinagar_gov",
-        "name": "srinagar (rajbagh - jkspcb)",
-        "provider": "cpcb_data_gov",
-        "lat": 34.066206,
-        "lon": 74.819820,
-    },
-    "jammu_gandhinagar": {
-        "id": "jammu_gandhinagar",
-        "name": "gandhi nagar / trikuta nagar, jammu",
-        "provider": "openweather",
-        "lat": 32.7100,
-        "lon": 74.8605,
-    },
-
-    "budgam_town": {
-        "id": "budgam_town",
-        "name": "budgam town",
-        "provider": "openweather",
-        "lat": 34.0150,
-        "lon": 74.7220,
-    },
-    "ganderbal_town": {
-        "id": "ganderbal_town",
-        "name": "ganderbal town",
-        "provider": "openweather",
-        "lat": 34.2290,
-        "lon": 74.7787,
-    },
-    "anantnag_city": {
-        "id": "anantnag_city",
-        "name": "anantnag city",
-        "provider": "openweather",
-        "lat": 33.7386,
-        "lon": 75.1487,
-    },
-    "pulwama_town": {
-        "id": "pulwama_town",
-        "name": "pulwama town",
-        "provider": "openweather",
-        "lat": 33.8740,
-        "lon": 74.8975,
-    },
-    "shopian_town": {
-        "id": "shopian_town",
-        "name": "shopian town",
-        "provider": "openweather",
-        "lat": 33.7200,
-        "lon": 74.8333,
-    },
-    "kulgam_town": {
-        "id": "kulgam_town",
-        "name": "kulgam town",
-        "provider": "openweather",
-        "lat": 33.6440,
-        "lon": 75.0186,
-    },
-    "baramulla_town": {
-        "id": "baramulla_town",
-        "name": "baramulla town",
-        "provider": "openweather",
-        "lat": 34.2090,
-        "lon": 74.3500,
-    },
-    "kupwara_town": {
-        "id": "kupwara_town",
-        "name": "kupwara town",
-        "provider": "openweather",
-        "lat": 34.5312,
-        "lon": 74.2550,
-    },
-    "bandipora_town": {
-        "id": "bandipora_town",
-        "name": "bandipora town",
-        "provider": "openweather",
-        "lat": 34.4175,
-        "lon": 74.6499,
-    },
-
-    "samba_town": {
-        "id": "samba_town",
-        "name": "samba town",
-        "provider": "openweather",
-        "lat": 32.5623,
-        "lon": 75.1190,
-    },
-    "kathua_town": {
-        "id": "kathua_town",
-        "name": "kathua town",
-        "provider": "openweather",
-        "lat": 32.3670,
-        "lon": 75.5230,
-    },
-    "udhampur_city": {
-        "id": "udhampur_city",
-        "name": "udhampur city",
-        "provider": "openweather",
-        "lat": 32.9240,
-        "lon": 75.1357,
-    },
-    "reasi_town": {
-        "id": "reasi_town",
-        "name": "reasi town",
-        "provider": "openweather",
-        "lat": 33.0803,
-        "lon": 74.8383,
-    },
-    "ramban_town": {
-        "id": "ramban_town",
-        "name": "ramban town",
-        "provider": "openweather",
-        "lat": 33.2420,
-        "lon": 75.2450,
-    },
-    "doda_town": {
-        "id": "doda_town",
-        "name": "doda town",
-        "provider": "openweather",
-        "lat": 33.1320,
-        "lon": 75.5670,
-    },
-    "kishtwar_town": {
-        "id": "kishtwar_town",
-        "name": "kishtwar town",
-        "provider": "openweather",
-        "lat": 33.3103,
-        "lon": 75.7665,
-    },
-    "rajouri_town": {
-        "id": "rajouri_town",
-        "name": "rajouri town",
-        "provider": "openweather",
-        "lat": 33.3750,
-        "lon": 74.3150,
-    },
-    "poonch_town": {
-        "id": "poonch_town",
-        "name": "poonch town",
-        "provider": "openweather",
-        "lat": 33.7690,
-        "lon": 74.0920,
-    },
+zones_path = os.path.join(os.path.dirname(__file__), "zones.json")
+with open(zones_path, "r") as f:
+    ZONES = json.load(f)
 }
 
 ###### US AQI CALCULATION LOGIC ######
 
-AQI_BREAKPOINTS = {
-    "pm2_5": [
-        (0.0, 12.0, 0, 50),
-        (12.1, 35.4, 51, 100),
-        (35.5, 55.4, 101, 150),
-        (55.5, 150.4, 151, 200),
-        (150.5, 250.4, 201, 300),
-        (250.5, 350.4, 301, 400),
-        (350.5, 500.4, 401, 500),
-    ],
-    "pm10": [
-        (0, 54, 0, 50),
-        (55, 154, 51, 100),
-        (155, 254, 101, 150),
-        (255, 354, 151, 200),
-        (355, 424, 201, 300),
-        (425, 504, 301, 400),
-        (505, 604, 401, 500),
-    ],
-    "co": [
-        (0.0, 4.4, 0, 50),
-        (4.5, 9.4, 51, 100),
-        (9.5, 12.4, 101, 150),
-        (12.5, 15.4, 151, 200),
-        (15.5, 30.4, 201, 300),
-        (30.5, 40.4, 301, 400),
-        (40.5, 50.4, 401, 500),
-    ],
-    "no2": [
-        (0, 53, 0, 50),
-        (54, 100, 51, 100),
-        (101, 360, 101, 150),
-        (361, 649, 151, 200),
-        (650, 1249, 201, 300),
-        (1250, 1649, 301, 400),
-        (1650, 2049, 401, 500),
-    ],
-    "so2": [
-        (0, 35, 0, 50),
-        (36, 75, 51, 100),
-        (76, 185, 101, 150),
-        (186, 304, 151, 200),
-        (305, 604, 201, 300),
-        (605, 804, 301, 400),
-        (805, 1004, 401, 500),
-    ],
-    "o3": [
-        (0, 54, 0, 50),
-        (55, 70, 51, 100),
-        (71, 85, 101, 150),
-        (86, 105, 151, 200),
-        (106, 200, 201, 300),
-        (201, 604, 301, 500),
-    ]
-}
+# breakpoints
+bp_path = os.path.join(os.path.dirname(__file__), "aqi_breakpoints.json")
+with open(bp_path, "r") as f:
+    AQI_BREAKPOINTS = json.load(f)
 
 def linear_interpolate(c: float, bp: Tuple[float, float, int, int]) -> int:
     c_lo, c_hi, i_lo, i_hi = bp
