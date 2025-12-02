@@ -1,4 +1,3 @@
-import asyncio
 import os
 from typing import Dict, Any, Optional, Tuple
 
@@ -8,32 +7,160 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="Breathe Backend (v1 - US AQI)")
+app = FastAPI(title="breathe backend")
 
-DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY")
-OWM_API_KEY = os.getenv("OWM_API_KEY")
+data_gov_api_key = os.getenv("DATA_GOV_API_KEY")
+owm_api_key = os.getenv("OWM_API_KEY")
 
-if not DATA_GOV_API_KEY:
-    print("WARNING: DATA_GOV_API_KEY not set")
-if not OWM_API_KEY:
-    print("WARNING: OWM_API_KEY not set")
+if not data_gov_api_key:
+    print("warning: DATA_GOV_API_KEY not set")
+if not owm_api_key:
+    print("warning: OWM_API_KEY not set")
 
 ###### ZONE DEFINITIONS ######
 
 ZONES = {
     "srinagar_gov": {
         "id": "srinagar_gov",
-        "name": "Srinagar (Rajbagh - JKSPCB)",
+        "name": "srinagar (rajbagh - jkspcb)",
         "provider": "cpcb_data_gov",
         "lat": 34.066206,
         "lon": 74.819820,
     },
     "jammu_gandhinagar": {
         "id": "jammu_gandhinagar",
-        "name": "Gandhi Nagar / Trikuta Nagar, Jammu",
+        "name": "gandhi nagar / trikuta nagar, jammu",
         "provider": "openweather",
         "lat": 32.7100,
         "lon": 74.8605,
+    },
+
+    "budgam_town": {
+        "id": "budgam_town",
+        "name": "budgam town",
+        "provider": "openweather",
+        "lat": 34.0150,
+        "lon": 74.7220,
+    },
+    "ganderbal_town": {
+        "id": "ganderbal_town",
+        "name": "ganderbal town",
+        "provider": "openweather",
+        "lat": 34.2290,
+        "lon": 74.7787,
+    },
+    "anantnag_city": {
+        "id": "anantnag_city",
+        "name": "anantnag city",
+        "provider": "openweather",
+        "lat": 33.7386,
+        "lon": 75.1487,
+    },
+    "pulwama_town": {
+        "id": "pulwama_town",
+        "name": "pulwama town",
+        "provider": "openweather",
+        "lat": 33.8740,
+        "lon": 74.8975,
+    },
+    "shopian_town": {
+        "id": "shopian_town",
+        "name": "shopian town",
+        "provider": "openweather",
+        "lat": 33.7200,
+        "lon": 74.8333,
+    },
+    "kulgam_town": {
+        "id": "kulgam_town",
+        "name": "kulgam town",
+        "provider": "openweather",
+        "lat": 33.6440,
+        "lon": 75.0186,
+    },
+    "baramulla_town": {
+        "id": "baramulla_town",
+        "name": "baramulla town",
+        "provider": "openweather",
+        "lat": 34.2090,
+        "lon": 74.3500,
+    },
+    "kupwara_town": {
+        "id": "kupwara_town",
+        "name": "kupwara town",
+        "provider": "openweather",
+        "lat": 34.5312,
+        "lon": 74.2550,
+    },
+    "bandipora_town": {
+        "id": "bandipora_town",
+        "name": "bandipora town",
+        "provider": "openweather",
+        "lat": 34.4175,
+        "lon": 74.6499,
+    },
+
+    "samba_town": {
+        "id": "samba_town",
+        "name": "samba town",
+        "provider": "openweather",
+        "lat": 32.5623,
+        "lon": 75.1190,
+    },
+    "kathua_town": {
+        "id": "kathua_town",
+        "name": "kathua town",
+        "provider": "openweather",
+        "lat": 32.3670,
+        "lon": 75.5230,
+    },
+    "udhampur_city": {
+        "id": "udhampur_city",
+        "name": "udhampur city",
+        "provider": "openweather",
+        "lat": 32.9240,
+        "lon": 75.1357,
+    },
+    "reasi_town": {
+        "id": "reasi_town",
+        "name": "reasi town",
+        "provider": "openweather",
+        "lat": 33.0803,
+        "lon": 74.8383,
+    },
+    "ramban_town": {
+        "id": "ramban_town",
+        "name": "ramban town",
+        "provider": "openweather",
+        "lat": 33.2420,
+        "lon": 75.2450,
+    },
+    "doda_town": {
+        "id": "doda_town",
+        "name": "doda town",
+        "provider": "openweather",
+        "lat": 33.1320,
+        "lon": 75.5670,
+    },
+    "kishtwar_town": {
+        "id": "kishtwar_town",
+        "name": "kishtwar town",
+        "provider": "openweather",
+        "lat": 33.3103,
+        "lon": 75.7665,
+    },
+    "rajouri_town": {
+        "id": "rajouri_town",
+        "name": "rajouri town",
+        "provider": "openweather",
+        "lat": 33.3750,
+        "lon": 74.3150,
+    },
+    "poonch_town": {
+        "id": "poonch_town",
+        "name": "poonch town",
+        "provider": "openweather",
+        "lat": 33.7690,
+        "lon": 74.0920,
     },
 }
 
@@ -105,20 +232,15 @@ def linear_interpolate(c: float, bp: Tuple[float, float, int, int]) -> int:
 def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
     if pollutant not in AQI_BREAKPOINTS:
         return None
-    
-    # handle bounds
     bps = AQI_BREAKPOINTS[pollutant]
-    if conc < bps[0][0]: 
+    if conc < bps[0][0]:
         return 0
-    
     for bp in bps:
         if bp[0] <= conc <= bp[1]:
             return linear_interpolate(conc, bp)
-            
     last_bp = bps[-1]
     if conc > last_bp[1]:
         return last_bp[3]
-        
     return None
 
 def convert_to_us_units(pollutant: str, val_ugm3: float) -> float:
@@ -149,17 +271,15 @@ def calculate_overall_aqi(pollutants_ugm3: Dict[str, float]) -> Dict[str, Any]:
         k = raw_key.lower()
         if k in key_map:
             internal_key = key_map[k]
-
             converted_val = convert_to_us_units(internal_key, val)
             concentrations_formatted[internal_key] = round(converted_val, 2)
-
             aqi_val = get_single_pollutant_aqi(internal_key, converted_val)
             if aqi_val is not None:
                 aqi_details[internal_key] = aqi_val
 
     overall_aqi = 0
     main_pollutant = "n/a"
-    
+
     if aqi_details:
         main_pollutant = max(aqi_details, key=aqi_details.get)
         overall_aqi = aqi_details[main_pollutant]
@@ -190,32 +310,31 @@ def list_zones() -> Dict[str, Any]:
     }
 
 async def fetch_srinagar_gov() -> Dict[str, Any]:
-    if not DATA_GOV_API_KEY:
+    if not data_gov_api_key:
         raise HTTPException(status_code=500, detail="DATA_GOV_API_KEY not configured")
 
     resource_id = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
     params = {
-        "api-key": DATA_GOV_API_KEY,
+        "api-key": data_gov_api_key,
         "format": "json",
         "limit": 100,
-        "filters[state]": "Jammu_and_Kashmir",
-        "filters[city]": "Srinagar",
-        "filters[station]": "Rajbagh, Srinagar - JKSPCB",
+        "filters[state]": "jammu_and_kashmir",
+        "filters[city]": "srinagar",
+        "filters[station]": "rajbagh, srinagar - jkspcb",
     }
 
     url = f"https://api.data.gov.in/resource/{resource_id}"
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(url, params=params)
-    
+
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="data.gov.in request failed")
 
     data = r.json()
     records = data.get("records", [])
     if not records:
-        raise HTTPException(status_code=404, detail="No CPCB data for Srinagar found")
+        raise HTTPException(status_code=404, detail="no cpcb data for srinagar found")
 
-    # extract raw pollutants
     raw_pollutants = {}
     last_update = None
     lat = None
@@ -224,7 +343,7 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
     for rec in records:
         p_id = rec.get("pollutant_id")
         avg_value = rec.get("avg_value")
-        
+
         if p_id and avg_value not in (None, "NA"):
             try:
                 raw_pollutants[p_id] = float(avg_value)
@@ -235,7 +354,6 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
         lat = float(rec.get("latitude")) if rec.get("latitude") else lat
         lon = float(rec.get("longitude")) if rec.get("longitude") else lon
 
-    # Calculate US AQI
     aqi_data = calculate_overall_aqi(raw_pollutants)
 
     return {
@@ -247,37 +365,34 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
         **aqi_data
     }
 
-async def fetch_jammu_openweather(lat: float, lon: float) -> Dict[str, Any]:
-    if not OWM_API_KEY:
+async def fetch_jammu_openweather(zone_id: str, zone_name: str, lat: float, lon: float):
+    if not owm_api_key:
         raise HTTPException(status_code=500, detail="OWM_API_KEY not configured")
 
     url = "https://api.openweathermap.org/data/2.5/air_pollution"
-    params = {"lat": lat, "lon": lon, "appid": OWM_API_KEY}
+    params = {"lat": lat, "lon": lon, "appid": owm_api_key}
 
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.get(url, params=params)
 
     if r.status_code != 200:
-        raise HTTPException(status_code=502, detail="OpenWeather request failed")
+        raise HTTPException(status_code=502, detail="openweather request failed")
 
     data = r.json()
     lst = data.get("list", [])
     if not lst:
-        raise HTTPException(status_code=404, detail="No OpenWeather AQ data")
+        raise HTTPException(status_code=404, detail="no openweather aq data")
 
     entry = lst[0]
     dt = entry.get("dt")
-    
-    # keys: co, no, no2, o3, so2, pm2_5, pm10, nh3
     raw_comps = entry.get("components", {})
-    
-    # calculate US AQI
+
     aqi_data = calculate_overall_aqi(raw_comps)
 
     return {
-        "zone_id": "jammu_gandhinagar",
-        "zone_name": "Gandhi Nagar / Trikuta Nagar, Jammu",
-        "source": "OpenWeather Air Pollution API",
+        "zone_id": zone_id,
+        "zone_name": zone_name,
+        "source": "openweather air pollution api",
         "timestamp_unix": dt,
         "coordinates": {"lat": lat, "lon": lon},
         **aqi_data
@@ -290,4 +405,104 @@ async def get_srinagar_aqi():
 @app.get("/aqi/jammu-gandhinagar")
 async def get_jammu_aqi():
     z = ZONES["jammu_gandhinagar"]
-    return await fetch_jammu_openweather(z["lat"], z["lon"])
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/budgam_town")
+async def get_budgam_town_aqi():
+    z = ZONES["budgam_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/ganderbal_town")
+async def get_ganderbal_town_aqi():
+    z = ZONES["ganderbal_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/anantnag_city")
+async def get_anantnag_city_aqi():
+    z = ZONES["anantnag_city"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/pulwama_town")
+async def get_pulwama_town_aqi():
+    z = ZONES["pulwama_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/shopian_town")
+async def get_shopian_town_aqi():
+    z = ZONES["shopian_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/kulgam_town")
+async def get_kulgam_town_aqi():
+    z = ZONES["kulgam_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/baramulla_town")
+async def get_baramulla_town_aqi():
+    z = ZONES["baramulla_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/kupwara_town")
+async def get_kupwara_town_aqi():
+    z = ZONES["kupwara_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/bandipora_town")
+async def get_bandipora_town_aqi():
+    z = ZONES["bandipora_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/samba_town")
+async def get_samba_town_aqi():
+    z = ZONES["samba_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/kathua_town")
+async def get_kathua_town_aqi():
+    z = ZONES["kathua_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/udhampur_city")
+async def get_udhampur_city_aqi():
+    z = ZONES["udhampur_city"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/reasi_town")
+async def get_reasi_town_aqi():
+    z = ZONES["reasi_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/ramban_town")
+async def get_ramban_town_aqi():
+    z = ZONES["ramban_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/doda_town")
+async def get_doda_town_aqi():
+    z = ZONES["doda_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/kishtwar_town")
+async def get_kishtwar_town_aqi():
+    z = ZONES["kishtwar_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/rajouri_town")
+async def get_rajouri_town_aqi():
+    z = ZONES["rajouri_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/poonch_town")
+async def get_poonch_town_aqi():
+    z = ZONES["poonch_town"]
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
+
+@app.get("/aqi/zone/{zone_id}")
+async def get_zone_aqi(zone_id: str):
+    if zone_id not in ZONES:
+        raise HTTPException(status_code=404, detail="zone not found")
+    z = ZONES[zone_id]
+    provider = z.get("provider", "")
+    if provider == "cpcb_data_gov":
+        return await fetch_srinagar_gov()
+    return await fetch_jammu_openweather(z["id"], z["name"], z["lat"], z["lon"])
