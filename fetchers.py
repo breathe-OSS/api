@@ -1,6 +1,6 @@
 import httpx
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import HTTPException
 from typing import Dict, Any
 
@@ -70,7 +70,8 @@ async def fetch_openmeteo_live(lat: float, lon: float) -> Dict[str, float]:
         "latitude": lat,
         "longitude": lon,
         "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone",
-        "timezone": "UTC", 
+        "timezone": "auto",
+        "timeformat": "unixtime",
         "past_days": 1 
     }
 
@@ -88,15 +89,12 @@ async def fetch_openmeteo_live(lat: float, lon: float) -> Dict[str, float]:
         if not times:
             raise HTTPException(status_code=404, detail="no openmeteo aq data found")
 
-        # Use UTC time for lookup
-        current_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
-        target_idx = -1
+        # Get current UTC timestamp
+        now_ts = datetime.now().timestamp()
         
-        if current_iso in times:
-            target_idx = times.index(current_iso)
-        else:
-            print(f"Warning: {current_iso} not found in OpenMeteo response. Using latest.")
-            target_idx = len(times) - 1
+        # Find the timestamp in the list that is closest to NOW
+        closest_ts = min(times, key=lambda t: abs(t - now_ts))
+        target_idx = times.index(closest_ts)
 
         raw_comps = {
             "pm10": hourly.get("pm10", [])[target_idx],
@@ -137,7 +135,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         return full_payload
         
     except Exception as e:
-        print(f"CRITICAL: Live fetch failed for {zone_id} | Error: {e}")
+        print(f"Live fetch failed for {zone_id}: {e}")
         if cached_data:
             return cached_data
         raise e
