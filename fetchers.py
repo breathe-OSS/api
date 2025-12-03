@@ -56,7 +56,7 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
 
     return {
         "zone_id": "srinagar_gov",
-        "zone_name": "Srinagar (Rajbagh - JKSPCB)",
+        "zone_name": "Srinagar",
         "source": "CPCB (data.gov.in)",
         "last_update": last_update,
         "coordinates": {"lat": lat, "lon": lon},
