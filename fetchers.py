@@ -14,9 +14,7 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
         "api-key": data_gov_api_key,
         "format": "json",
         "limit": 100,
-        "filters[state]": "jammu_and_kashmir",
-        "filters[city]": "srinagar",
-        "filters[station]": "rajbagh, srinagar - jkspcb",
+        "filters[city]": "Srinagar",
     }
 
     url = f"https://api.data.gov.in/resource/{resource_id}"
@@ -29,6 +27,7 @@ async def fetch_srinagar_gov() -> Dict[str, Any]:
     data = r.json()
     records = data.get("records", [])
     if not records:
+        print(f"DEBUG RESPONSE: {data}") 
         raise HTTPException(status_code=404, detail="no cpcb data for srinagar found")
 
     raw_pollutants = {}
