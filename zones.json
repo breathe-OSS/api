@@ -17,7 +17,7 @@
   },
   "budgam_town": {
     "id": "budgam_town",
-    "name": "Budgam Town",
+    "name": "Budgam",
     "provider": "openmeteo",
     "lat": 34.0150,
     "lon": 74.7220,
@@ -25,7 +25,7 @@
   },
   "ganderbal_town": {
     "id": "ganderbal_town",
-    "name": "Ganderbal Town",
+    "name": "Ganderbal",
     "provider": "openmeteo",
     "lat": 34.2290,
     "lon": 74.7787,
@@ -33,7 +33,7 @@
   },
   "anantnag_city": {
     "id": "anantnag_city",
-    "name": "Anantnag City",
+    "name": "Anantnag",
     "provider": "openmeteo",
     "lat": 33.7386,
     "lon": 75.1487,
@@ -41,7 +41,7 @@
   },
   "pulwama_town": {
     "id": "pulwama_town",
-    "name": "Pulwama Town",
+    "name": "Pulwama",
     "provider": "openmeteo",
     "lat": 33.8740,
     "lon": 74.8975,
@@ -49,7 +49,7 @@
   },
   "shopian_town": {
     "id": "shopian_town",
-    "name": "Shopian Town",
+    "name": "Shopian",
     "provider": "openmeteo",
     "lat": 33.7200,
     "lon": 74.8333,
@@ -57,7 +57,7 @@
   },
   "kulgam_town": {
     "id": "kulgam_town",
-    "name": "Kulgam Town",
+    "name": "Kulgam",
     "provider": "openmeteo",
     "lat": 33.6440,
     "lon": 75.0186,
@@ -65,7 +65,7 @@
   },
   "baramulla_town": {
     "id": "baramulla_town",
-    "name": "Baramulla Town",
+    "name": "Baramulla",
     "provider": "openmeteo",
     "lat": 34.2090,
     "lon": 74.3500,
@@ -73,7 +73,7 @@
   },
   "kupwara_town": {
     "id": "kupwara_town",
-    "name": "Kupwara Town",
+    "name": "Kupwara",
     "provider": "openmeteo",
     "lat": 34.5312,
     "lon": 74.2550,
@@ -81,7 +81,7 @@
   },
   "bandipora_town": {
     "id": "bandipora_town",
-    "name": "Bandipora Town",
+    "name": "Bandipora",
     "provider": "openmeteo",
     "lat": 34.4175,
     "lon": 74.6499,
@@ -89,7 +89,7 @@
   },
   "samba_town": {
     "id": "samba_town",
-    "name": "Samba Town",
+    "name": "Samba",
     "provider": "openmeteo",
     "lat": 32.5623,
     "lon": 75.1190,
@@ -97,7 +97,7 @@
   },
   "kathua_town": {
     "id": "kathua_town",
-    "name": "Kathua Town",
+    "name": "Kathua",
     "provider": "openmeteo",
     "lat": 32.3670,
     "lon": 75.5230,
@@ -105,7 +105,7 @@
   },
   "udhampur_city": {
     "id": "udhampur_city",
-    "name": "Udhampur City",
+    "name": "Udhampur",
     "provider": "openmeteo",
     "lat": 32.9240,
     "lon": 75.1357,
@@ -113,7 +113,7 @@
   },
   "reasi_town": {
     "id": "reasi_town",
-    "name": "Reasi Town",
+    "name": "Reasi",
     "provider": "openmeteo",
     "lat": 33.0803,
     "lon": 74.8383,
@@ -121,7 +121,7 @@
   },
   "ramban_town": {
     "id": "ramban_town",
-    "name": "Ramban Town",
+    "name": "Ramban",
     "provider": "openmeteo",
     "lat": 33.2420,
     "lon": 75.2450,
@@ -129,7 +129,7 @@
   },
   "doda_town": {
     "id": "doda_town",
-    "name": "Doda Town",
+    "name": "Doda",
     "provider": "openmeteo",
     "lat": 33.1320,
     "lon": 75.5670,
@@ -137,7 +137,7 @@
   },
   "kishtwar_town": {
     "id": "kishtwar_town",
-    "name": "Kishtwar Town",
+    "name": "Kishtwar",
     "provider": "openmeteo",
     "lat": 33.3103,
     "lon": 75.7665,
@@ -145,7 +145,7 @@
   },
   "rajouri_town": {
     "id": "rajouri_town",
-    "name": "Rajouri Town",
+    "name": "Rajouri",
     "provider": "openmeteo",
     "lat": 33.3750,
     "lon": 74.3150,
@@ -153,7 +153,7 @@
   },
   "poonch_town": {
     "id": "poonch_town",
-    "name": "Poonch Town",
+    "name": "Poonch",
     "provider": "openmeteo",
     "lat": 33.7690,
     "lon": 74.0920,
