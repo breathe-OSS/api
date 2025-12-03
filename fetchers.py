@@ -1,6 +1,6 @@
 import httpx
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from typing import Dict, Any
 
@@ -8,6 +8,7 @@ from config import data_gov_api_key, ZONES
 from conversions import calculate_overall_aqi
 
 _RAM_CACHE = {}
+CACHE_DURATION = 900  # 15 minutes
 
 async def fetch_srinagar_gov() -> Dict[str, Any]:
     if not data_gov_api_key:
@@ -69,7 +70,7 @@ async def fetch_openmeteo_live(lat: float, lon: float) -> Dict[str, float]:
         "latitude": lat,
         "longitude": lon,
         "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone",
-        "timezone": "auto",
+        "timezone": "UTC", 
         "past_days": 1 
     }
 
@@ -87,11 +88,15 @@ async def fetch_openmeteo_live(lat: float, lon: float) -> Dict[str, float]:
         if not times:
             raise HTTPException(status_code=404, detail="no openmeteo aq data found")
 
-        current_iso = datetime.now().strftime("%Y-%m-%dT%H:00")
+        # Use UTC time for lookup
+        current_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
         target_idx = -1
         
         if current_iso in times:
             target_idx = times.index(current_iso)
+        else:
+            print(f"Warning: {current_iso} not found in OpenMeteo response. Using latest.")
+            target_idx = len(times) - 1
 
         raw_comps = {
             "pm10": hourly.get("pm10", [])[target_idx],
@@ -106,17 +111,15 @@ async def fetch_openmeteo_live(lat: float, lon: float) -> Dict[str, float]:
 
 async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zone_type: str):
     cached_data = _RAM_CACHE.get(zone_id)
+    current_time = datetime.now().timestamp()
 
-    needs_update = True
     if cached_data:
         last_fetched = cached_data.get("timestamp_unix", 0)
-        if datetime.now().timestamp() - last_fetched < 900:
-            needs_update = False
+        if current_time - last_fetched < CACHE_DURATION:
             return cached_data
 
     try:
         raw_comps = await fetch_openmeteo_live(lat, lon)
-        dt = datetime.now().timestamp()
         
         aqi_data = calculate_overall_aqi(raw_comps, zone_type=zone_type)
         
@@ -124,7 +127,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             "zone_id": zone_id,
             "zone_name": zone_name,
             "source": "openmeteo air pollution api",
-            "timestamp_unix": dt,
+            "timestamp_unix": current_time,
             "coordinates": {"lat": lat, "lon": lon},
             **aqi_data
         }
@@ -134,7 +137,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         return full_payload
         
     except Exception as e:
-        print(f"Live fetch failed for {zone_id}: {e}")
+        print(f"CRITICAL: Live fetch failed for {zone_id} | Error: {e}")
         if cached_data:
             return cached_data
         raise e
