@@ -15,30 +15,6 @@
     "lon": 74.8609,
     "zone_type": "urban"
   },
-  "jammu_talab_tillo": {
-    "id": "jammu_talab_tillo",
-    "name": "Talab Tillo",
-    "provider": "openmeteo",
-    "lat": 32.7483,
-    "lon": 74.8556,
-    "zone_type": "urban"
-  },
-  "jammu_janipur": {
-    "id": "jammu_janipur",
-    "name": "Janipur",
-    "provider": "openmeteo",
-    "lat": 32.7527,
-    "lon": 74.8372,
-    "zone_type": "urban"
-  },
-  "jammu_paloura": {
-    "id": "jammu_paloura",
-    "name": "Paloura",
-    "provider": "openmeteo",
-    "lat": 32.7554,
-    "lon": 74.8244,
-    "zone_type": "urban"
-  },
   "jammu_bantalab": {
     "id": "jammu_bantalab",
     "name": "Bantalab",
