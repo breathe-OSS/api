@@ -1,5 +1,5 @@
 # Breathe backend
-A modular FastAPI backend designed to retrieve and standardize air quality data across the Jammu & Kashmir region for the **Breathe** app. The system aggregates data from multiple providers: **OpenMeteo** for satellite-based estimates in most districts and the **Central Pollution Control Board** (CPCB) for ground station data in Srinagar.
+A modular FastAPI backend designed to retrieve and standardize air quality data across the Jammu & Kashmir region for the **Breathe** app. The system aggregates data from multiple providers: **OpenMeteo** and  **OpenAQ** for satellite-based estimates in most districts and the **Central Pollution Control Board** (CPCB) for ground station data in Srinagar.
 
 ## How the AQI is Calculated
 
@@ -75,6 +75,12 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 - httpx
 - python-dotenv
 - uvicorn
+
+## Environment Variables
+```
+DATA_GOV_API_KEY=your_key
+OPENAQ_API_KEY=your_key
+```
 
 ## Running
 From the `api` directory:

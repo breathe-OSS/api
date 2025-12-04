@@ -12,12 +12,12 @@ def linear_interpolate(c: float, bp: Tuple[float, float, int, int]) -> int:
 def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
     if pollutant not in AQI_BREAKPOINTS:
         return None
-    
+
     bps = AQI_BREAKPOINTS[pollutant]
     
     if conc < bps[0][0]:
         return 0
-        
+
     for c_low, c_high, i_low, i_high in bps:
         if c_low <= conc <= c_high:
             return linear_interpolate(conc, (c_low, c_high, i_low, i_high))
@@ -25,7 +25,7 @@ def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
     last_bp = bps[-1]
     if conc > last_bp[1]:
         return 500
-        
+
     return None
 
 def prepare_for_indian_aqi(pollutant: str, val_ugm3: float) -> float:
@@ -36,7 +36,7 @@ def prepare_for_indian_aqi(pollutant: str, val_ugm3: float) -> float:
 def calculate_overall_aqi(pollutants_ugm3: Dict[str, float], zone_type: str = "default") -> Dict[str, Any]:
     aqi_details = {}
     concentrations_formatted = {}
-    
+
     key_map = {
         "pm2.5": "pm2_5", "pm2_5": "pm2_5", "pm25": "pm2_5",
         "pm10": "pm10",
@@ -50,12 +50,12 @@ def calculate_overall_aqi(pollutants_ugm3: Dict[str, float], zone_type: str = "d
         k = raw_key.lower().strip()
         if k not in key_map:
             continue
-            
+    
         internal_key = key_map[k]
         indian_unit_val = prepare_for_indian_aqi(internal_key, val)
-        
+
         concentrations_formatted[internal_key] = round(indian_unit_val, 2)
-        
+
         aqi_val = get_single_pollutant_aqi(internal_key, indian_unit_val)
         if aqi_val is not None:
             aqi_details[internal_key] = aqi_val

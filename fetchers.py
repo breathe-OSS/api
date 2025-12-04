@@ -4,11 +4,56 @@ from datetime import datetime
 from fastapi import HTTPException
 from typing import Dict, Any
 
-from config import ZONES
+from config import ZONES, SRINAGAR_OPENAQ_CONFIG, openaq_api_key
 from conversions import calculate_overall_aqi
 
 _RAM_CACHE = {}
 CACHE_DURATION = 900  # 15 minutes
+
+async def fetch_openaq_srinagar() -> Dict[str, Any]:
+    if not openaq_api_key:
+        print("WARNING: OPENAQ_API_KEY not set. Falling back to OpenMeteo logic not possible here.")
+        raise HTTPException(status_code=500, detail="Server config error: Missing OpenAQ Key")
+
+    loc_id = SRINAGAR_OPENAQ_CONFIG["location_id"]
+    url = f"https://api.openaq.org/v3/locations/{loc_id}/sensors"
+    headers = {"X-API-Key": openaq_api_key}
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(url, headers=headers)
+        
+        if r.status_code != 200:
+            print(f"OpenAQ Error: {r.text}")
+            raise HTTPException(status_code=502, detail="OpenAQ fetch failed")
+
+        data = r.json()
+        results = data.get("results", [])
+        
+        current_comps = {}
+        sensor_map = SRINAGAR_OPENAQ_CONFIG["sensor_map"]
+
+        for sensor in results:
+            s_id = sensor.get("id")
+            latest_obj = sensor.get("latest", {})
+            val = latest_obj.get("value")
+
+            if s_id in sensor_map and val is not None:
+                name = sensor_map[s_id]
+                current_comps[name] = val
+
+            try:
+                aqi_res = calculate_overall_aqi(hour_comps, zone_type=zone_type)
+                history.append({
+                    "ts": times[i],
+                    "aqi": aqi_res["aqi"]
+                })
+            except:
+                continue
+
+        return {
+            "current_comps": current_comps,
+            "history": [] 
+        }
 
 async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[str, Any]:
     url = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -62,8 +107,6 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
             }
             hour_comps = {k: v for k, v in hour_comps.items() if v is not None}
             
-            # Calculate AQI for this specific hour
-            # Note: We catch errors in case data is missing for a specific hour
             try:
                 aqi_res = calculate_overall_aqi(hour_comps, zone_type=zone_type)
                 history.append({
@@ -88,7 +131,12 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             return cached_data
 
     try:
-        fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+        if zone_id == "srinagar":
+            fetched_data = await fetch_openaq_srinagar()
+            source_name = "openaq (official cpcb)"
+        else:
+            fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+            source_name = "openmeteo air pollution api"
         
         raw_comps = fetched_data["current_comps"]
         history = fetched_data["history"]
@@ -98,7 +146,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         full_payload = {
             "zone_id": zone_id,
             "zone_name": zone_name,
-            "source": "openmeteo air pollution api",
+            "source": source_name,
             "timestamp_unix": current_time,
             "coordinates": {"lat": lat, "lon": lon},
             "history": history,
