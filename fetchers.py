@@ -95,6 +95,17 @@ async def fetch_openaq_srinagar(zone_type: str = "hills") -> Dict[str, Any]:
 
         all_points = [pt for sublist in history_lists for pt in sublist]
 
+        if current_comps and all(v == 0 for v in current_comps.values()):
+            print("fetch_openaq_srinagar: OpenAQ reporting all zeros. Patching with last known non-zero values...")
+
+            sorted_history = sorted(all_points, key=lambda x: x['ts'], reverse=True)
+
+            for param in sensor_map.values():
+                for pt in sorted_history:
+                    if pt['param'] == param and pt['val'] > 0:
+                        current_comps[param] = pt['val']
+                        break
+
         history_buckets = {}
         for pt in all_points:
             ts = pt['ts']
