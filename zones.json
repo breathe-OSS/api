@@ -7,6 +7,14 @@
     "lon": 74.8122,
     "zone_type": "urban"
   },
+  "leh": {
+    "id": "ladakh_leh",
+    "name": "Leh",
+    "provider": "openaq",
+    "lat": 34.1526,
+    "lon": 77.5771,
+    "zone_type": "urban"
+  },
   "jammu_gandhinagar": {
     "id": "jammu_gandhinagar",
     "name": "Gandhi Nagar",
@@ -109,6 +117,14 @@
     "provider": "openmeteo",
     "lat": 34.5260,
     "lon": 74.2580,
+    "zone_type": "hills"
+  },
+  "kargil_town": {
+    "id": "ladakh_kargil",
+    "name": "Kargil",
+    "provider": "openmeteo",
+    "lat": 34.5539,
+    "lon": 76.1349,
     "zone_type": "hills"
   },
   "handwara_town": {
@@ -293,6 +309,14 @@
     "provider": "openmeteo",
     "lat": 33.7690,
     "lon": 74.0920,
+    "zone_type": "hills"
+  },
+  "pahalgam_town": {
+    "id": "pahalgam_town",
+    "name": "Pahalgam",
+    "provider": "openmeteo",
+    "lat": 34.0161,
+    "lon": 75.3150,
     "zone_type": "hills"
   }
 }
