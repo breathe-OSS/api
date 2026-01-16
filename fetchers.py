@@ -1,169 +1,271 @@
 import httpx
 import asyncio
+import json
+import os
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from typing import Dict, Any, List
 
-from config import ZONES, SRINAGAR_OPENAQ_CONFIG, openaq_api_key
+from config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
 from conversions import calculate_overall_aqi
 
 _RAM_CACHE = {}
 CACHE_DURATION = 900  # 15 minutes
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "sensor_history.json")
 
-async def fetch_sensor_history(client: httpx.AsyncClient, sensor_id: int, param_name: str, start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
-    """
-    Fetches hourly history for a single sensor using OpenAQ v3 /hours endpoint.
-    """
-    url = f"https://api.openaq.org/v3/sensors/{sensor_id}/hours"
-    params = {
-        "datetime_from": start_iso,
-        "datetime_to": end_iso,
-        "limit": 1000
-    }
-    
+def _load_local_history() -> Dict[str, List[Dict[str, Any]]]:
+    if not os.path.exists(HISTORY_FILE):
+        return {}
     try:
-        r = await client.get(url, params=params)
-        if r.status_code != 200:
-            return []
-        
-        data = r.json()
-        results = data.get("results", [])
-        
-        parsed_points = []
-        for res in results:
-            iso_time = res.get("period", {}).get("datetimeTo", {}).get("local")
-            val = res.get("value")
-            
-            if iso_time and val is not None:
-                try:
-                    dt = datetime.fromisoformat(iso_time)
-                    ts = dt.timestamp()
-                    parsed_points.append({"ts": ts, "param": param_name, "val": val})
-                except ValueError:
-                    continue
-        return parsed_points
-        
-    except Exception as e:
-        print(f"Error fetching history for sensor {sensor_id}: {e}")
-        return []
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
-async def fetch_openaq_srinagar(lat: float, lon: float, zone_type: str = "hills") -> Dict[str, Any]:
-    if not openaq_api_key:
-        print("WARNING: OPENAQ_API_KEY not set.")
-        raise HTTPException(status_code=500, detail="Server config error: Missing OpenAQ Key")
-
-    loc_id = SRINAGAR_OPENAQ_CONFIG["location_id"]
-    sensor_map = SRINAGAR_OPENAQ_CONFIG["sensor_map"]
+def _save_local_history(zone_id: str, pm25: float, pm10: float):
+    data = _load_local_history()
+    if zone_id not in data:
+        data[zone_id] = []
     
-    headers = {"X-API-Key": openaq_api_key}
+    # Append new reading
+    now_ts = datetime.now().timestamp()
+    data[zone_id].append({
+        "ts": now_ts,
+        "pm2_5": pm25,
+        "pm10": pm10
+    })
 
+    cutoff = now_ts - (26 * 3600)
+    data[zone_id] = [p for p in data[zone_id] if p["ts"] > cutoff]
+    
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(data, f)
+
+def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    local_data = _load_local_history().get(zone_id, [])
+
+    history_buckets = {}
+
+    for pt in om_points:
+        ts = pt['ts']
+        if ts not in history_buckets: history_buckets[ts] = {}
+        history_buckets[ts][pt['param']] = pt['val']
+
+    for pt in local_data:
+        dt = datetime.fromtimestamp(pt["ts"])
+        if dt.minute >= 30: dt += timedelta(hours=1)
+        hour_ts = dt.replace(minute=0, second=0, microsecond=0).timestamp()
+        
+        if hour_ts not in history_buckets: history_buckets[hour_ts] = {}
+        history_buckets[hour_ts]["pm2_5"] = pt["pm2_5"]
+        history_buckets[hour_ts]["pm10"] = pt["pm10"]
+
+    sorted_times = sorted(history_buckets.keys())
+
+    now_ts = datetime.now().timestamp()
+    start_ts = now_ts - (24 * 3600)
+    
+    final_history = []
+    
+    for ts in sorted_times:
+        if ts < start_ts or ts > now_ts + 3600: 
+            continue # Skip old data or future data
+            
+        hour_comps = history_buckets[ts]
+        try:
+            aqi_res = calculate_overall_aqi(hour_comps, zone_type="urban") # Defaulting to urban strictly for calc
+            final_history.append({
+                "ts": ts,
+                "aqi": aqi_res["aqi"]
+            })
+        except:
+            continue
+            
+    return final_history
+
+async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "hills") -> Dict[str, Any]:
+    if not airgradient_token:
+        print("WARNING: AIRGRADIENT_TOKEN not set.")
+        raise HTTPException(status_code=500, detail="Server config error: Missing AirGradient Token")
+
+    loc_id = SRINAGAR_AIRGRADIENT_CONFIG["location_id"]
     now = datetime.now()
-    past_24h = now - timedelta(hours=24)
-    start_iso = past_24h.replace(microsecond=0).isoformat()
-    end_iso = now.replace(microsecond=0).isoformat()
 
     om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
     om_params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "ozone",
+        "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
+        "timezone": "auto",
+        "timeformat": "unixtime",
+        "past_days": 1 
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        ag_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={airgradient_token}"
+        ag_task = client.get(ag_url)
+        om_task = client.get(om_url, params=om_params)
+        all_results = await asyncio.gather(ag_task, om_task)
+
+    ag_resp = all_results[0]
+    om_resp = all_results[1]
+    
+    current_comps = {}
+
+    if ag_resp.status_code == 200:
+        d = ag_resp.json()
+        pm25 = d.get("pm02_corrected") if d.get("pm02_corrected") is not None else d.get("pm02")
+        pm10 = d.get("pm10_corrected") if d.get("pm10_corrected") is not None else d.get("pm10")
+        
+        current_comps["pm2_5"] = pm25
+        current_comps["pm10"] = pm10
+        current_comps["temp"] = d.get("atmp_corrected") if d.get("atmp_corrected") is not None else d.get("atmp")
+        current_comps["humidity"] = d.get("rhum_corrected") if d.get("rhum_corrected") is not None else d.get("rhum")
+        
+        # SAVE TO HISTORY (The Hack)
+        if pm25 is not None and pm10 is not None:
+            _save_local_history("srinagar", pm25, pm10)
+    else:
+        print(f"AirGradient Error: {ag_resp.text}")
+        raise HTTPException(status_code=502, detail="AirGradient fetch failed")
+
+    om_points = []
+    if om_resp.status_code == 200:
+        om_json = om_resp.json()
+        hourly = om_json.get("hourly", {})
+        times = hourly.get("time", [])
+        
+        o3_vals = hourly.get("ozone", [])
+        no2_vals = hourly.get("nitrogen_dioxide", [])
+        so2_vals = hourly.get("sulphur_dioxide", [])
+        co_vals = hourly.get("carbon_monoxide", [])
+        
+        for i, t in enumerate(times):
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3":  vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co":  vals = co_vals
+                    case _:     vals = []
+
+                if i < len(vals) and vals[i] is not None:
+                    om_points.append({"ts": t, "param": param, "val": vals[i]})
+
+        if times:
+            now_ts = now.timestamp()
+            closest_ts = min(times, key=lambda t: abs(t - now_ts))
+            idx = times.index(closest_ts)
+            
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3":  vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co":  vals = co_vals
+                    case _:     vals = []
+                
+                if idx < len(vals) and vals[idx] is not None:
+                    current_comps[param] = vals[idx]
+
+    history = _get_merged_history("srinagar", om_points)
+
+    return {
+        "current_comps": current_comps,
+        "history": history 
+    }
+
+async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urban") -> Dict[str, Any]:
+    if not jammu_airgradient_token:
+        print("WARNING: JAMMU_AIRGRADIENT_TOKEN not set.")
+        raise HTTPException(status_code=500, detail="Server config error: Missing Jammu AirGradient Token")
+
+    loc_id = JAMMU_AIRGRADIENT_CONFIG["location_id"]
+    now = datetime.now()
+
+    om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    om_params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
         "timezone": "auto",
         "timeformat": "unixtime",
         "past_days": 1
     }
 
-    async with httpx.AsyncClient(timeout=20, headers=headers) as client:
-        latest_url = f"https://api.openaq.org/v3/locations/{loc_id}/sensors"
+    async with httpx.AsyncClient(timeout=20) as client:
+        ag_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={jammu_airgradient_token}"
+        ag_task = client.get(ag_url)
+        om_task = client.get(om_url, params=om_params)
+        all_results = await asyncio.gather(ag_task, om_task)
 
-        latest_task = client.get(latest_url)
-        history_tasks = []
-        for s_id, param in sensor_map.items():
-            history_tasks.append(fetch_sensor_history(client, s_id, param, start_iso, end_iso))
+    ag_resp = all_results[0]
+    om_resp = all_results[1]
+    
+    current_comps = {}
 
-        async with httpx.AsyncClient(timeout=20) as om_client:
-            om_task = om_client.get(om_url, params=om_params)
-            
-            all_results = await asyncio.gather(latest_task, om_task, *history_tasks)
-
-        latest_resp = all_results[0]
-        om_resp = all_results[1]
-        history_lists = all_results[2:]
+    if ag_resp.status_code == 200:
+        d = ag_resp.json()
+        pm25 = d.get("pm02_corrected") if d.get("pm02_corrected") is not None else d.get("pm02")
+        pm10 = d.get("pm10_corrected") if d.get("pm10_corrected") is not None else d.get("pm10")
         
-        if latest_resp.status_code != 200:
-            print(f"OpenAQ Latest Error: {latest_resp.text}")
-            raise HTTPException(status_code=502, detail="OpenAQ fetch failed")
+        current_comps["pm2_5"] = pm25
+        current_comps["pm10"] = pm10
+        current_comps["temp"] = d.get("atmp_corrected") if d.get("atmp_corrected") is not None else d.get("atmp")
+        current_comps["humidity"] = d.get("rhum_corrected") if d.get("rhum_corrected") is not None else d.get("rhum")
 
-        latest_data = latest_resp.json()
-        latest_results = latest_data.get("results", [])
-        current_comps = {}
+        if pm25 is not None and pm10 is not None:
+            _save_local_history("jammu_city", pm25, pm10)
 
-        for sensor in latest_results:
-            s_id = sensor.get("id")
-            latest_obj = sensor.get("latest", {})
-            val = latest_obj.get("value")
-
-            if s_id in sensor_map and val is not None:
-                name = sensor_map[s_id]
-                current_comps[name] = val
-
-        om_points = []
-        if om_resp.status_code == 200:
-            om_json = om_resp.json()
-            hourly = om_json.get("hourly", {})
-            times = hourly.get("time", [])
-            vals = hourly.get("ozone", [])
-            
-            for t, v in zip(times, vals):
-                if v is not None:
-                    om_points.append({"ts": t, "param": "o3", "val": v})
-
-            if times:
-                now_ts = now.timestamp()
-                closest_ts = min(times, key=lambda t: abs(t - now_ts))
-                idx = times.index(closest_ts)
-                if vals[idx] is not None:
-                    current_comps["o3"] = vals[idx]
-        else:
-            print(f"OpenMeteo Ozone fetch failed: {om_resp.status_code}")
-
-        all_points = [pt for sublist in history_lists for pt in sublist] + om_points
-
-        if current_comps and all(v == 0 for v in current_comps.values()):
-            print("fetch_openaq_srinagar: OpenAQ reporting all zeros. Patching with last known non-zero values...")
-
-            sorted_history = sorted(all_points, key=lambda x: x['ts'], reverse=True)
-
-            for param in list(sensor_map.values()) + ["o3"]:
-                for pt in sorted_history:
-                    if pt['param'] == param and pt['val'] > 0:
-                        current_comps[param] = pt['val']
-                        break
-
-        history_buckets = {}
-        for pt in all_points:
-            ts = pt['ts']
-            if ts not in history_buckets:
-                history_buckets[ts] = {}
-            history_buckets[ts][pt['param']] = pt['val']
-
-        sorted_times = sorted(history_buckets.keys())
-        history = []
+    else:
+        print(f"AirGradient Error: {ag_resp.text}")
+        raise HTTPException(status_code=502, detail="AirGradient fetch failed")
         
-        for ts in sorted_times:
-            hour_comps = history_buckets[ts]
-            try:
-                aqi_res = calculate_overall_aqi(hour_comps, zone_type=zone_type)
-                history.append({
-                    "ts": ts,
-                    "aqi": aqi_res["aqi"]
-                })
-            except:
-                continue
+    om_points = []
+    if om_resp.status_code == 200:
+        om_json = om_resp.json()
+        hourly = om_json.get("hourly", {})
+        times = hourly.get("time", [])
+        
+        o3_vals = hourly.get("ozone", [])
+        no2_vals = hourly.get("nitrogen_dioxide", [])
+        so2_vals = hourly.get("sulphur_dioxide", [])
+        co_vals = hourly.get("carbon_monoxide", [])
+        
+        for i, t in enumerate(times):
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3":  vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co":  vals = co_vals
+                    case _:     vals = []
 
-        return {
-            "current_comps": current_comps,
-            "history": history 
-        }
+                if i < len(vals) and vals[i] is not None:
+                    om_points.append({"ts": t, "param": param, "val": vals[i]})
+
+        if times:
+            now_ts = now.timestamp()
+            closest_ts = min(times, key=lambda t: abs(t - now_ts))
+            idx = times.index(closest_ts)
+            
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3":  vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co":  vals = co_vals
+                    case _:     vals = []
+                
+                if idx < len(vals) and vals[idx] is not None:
+                    current_comps[param] = vals[idx]
+
+    history = _get_merged_history("jammu_city", om_points)
+
+    return {
+        "current_comps": current_comps,
+        "history": history 
+    }
 
 async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[str, Any]:
     url = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -203,10 +305,13 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
 
         current_comps = {k: v for k, v in current_comps.items() if v is not None}
 
-        start_idx = max(0, target_idx - 24)
+        start_ts = now_ts - (24 * 3600)
         history = []
 
-        for i in range(start_idx, target_idx + 1):
+        for i, t in enumerate(times):
+            if t < start_ts or t > now_ts + 3600:
+                continue
+
             hour_comps = {
                 "pm10": hourly.get("pm10", [])[i],
                 "pm2_5": hourly.get("pm2_5", [])[i],
@@ -242,8 +347,11 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
 
     try:
         if zone_id == "srinagar":
-            fetched_data = await fetch_openaq_srinagar(lat, lon, zone_type=zone_type)
-            source_name = "openaq (official cpcb) + openmeteo (o3)"
+            fetched_data = await fetch_airgradient_srinagar(lat, lon, zone_type=zone_type)
+            source_name = "airgradient + openmeteo"
+        elif zone_id == "jammu_city":
+            fetched_data = await fetch_airgradient_jammu(lat, lon, zone_type=zone_type)
+            source_name = "airgradient + openmeteo"
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
             source_name = "openmeteo air pollution api"

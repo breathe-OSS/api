@@ -74,7 +74,7 @@
   "jammu_city": {
     "id": "jammu_city",
     "name": "Jammu",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 32.7169,
     "lon": 74.8609,
     "zone_type": "urban"
@@ -146,7 +146,7 @@
   "leh": {
     "id": "leh",
     "name": "Leh",
-    "provider": "openaq",
+    "provider": "openmeteo",
     "lat": 34.1526,
     "lon": 77.5771,
     "zone_type": "urban"
@@ -266,7 +266,7 @@
   "srinagar": {
     "id": "srinagar",
     "name": "Srinagar",
-    "provider": "openaq",
+    "provider": "airgradient",
     "lat": 34.0709,
     "lon": 74.8122,
     "zone_type": "urban"
