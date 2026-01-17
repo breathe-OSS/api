@@ -63,43 +63,46 @@ async def ensure_history_exists(zone_id: str, loc_id: int, token: str):
 
 def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     local_data = database.get_history(zone_id, hours=24)
+
+    sensor_start_ts = None
+    if local_data:
+        local_data.sort(key=lambda x: x["ts"])
+        # Sort to find the very first real reading
+        first_real_ts = local_data[0]["ts"]
+        dt = datetime.fromtimestamp(first_real_ts)
+        sensor_start_ts = dt.replace(minute=0, second=0, microsecond=0).timestamp()
+
     history_buckets = {}
 
     for pt in om_points:
         ts = pt['ts']
+
+        if sensor_start_ts and ts >= sensor_start_ts:
+            continue
+
         if ts not in history_buckets: history_buckets[ts] = {}
         history_buckets[ts][pt['param']] = pt['val']
 
-    now_ts = datetime.now().timestamp()
-    start_ts = now_ts - (24 * 3600)
-
     if local_data:
-        for ts in history_buckets:
-            history_buckets[ts].pop("pm2_5", None)
-            history_buckets[ts].pop("pm10", None)
-
-        # Sort to find the very first real reading
-        local_data.sort(key=lambda x: x["ts"])
-
-        first_real_ts = local_data[0]["ts"]
-        dt = datetime.fromtimestamp(first_real_ts)
-        start_ts = dt.replace(minute=0, second=0, microsecond=0).timestamp()
-
         for pt in local_data:
             dt = datetime.fromtimestamp(pt["ts"])
             hour_ts = dt.replace(minute=0, second=0, microsecond=0).timestamp()
             
             if hour_ts not in history_buckets: history_buckets[hour_ts] = {}
-
             history_buckets[hour_ts]["pm2_5"] = pt["pm2_5"]
             history_buckets[hour_ts]["pm10"] = pt["pm10"]
 
     sorted_times = sorted(history_buckets.keys())
-    
+    now_ts = datetime.now().timestamp()
+
+    clip_start_ts = now_ts - (24 * 3600)
+    if sensor_start_ts:
+         clip_start_ts = sensor_start_ts
+
     final_history = []
     
     for ts in sorted_times:
-        if ts < start_ts or ts > now_ts:
+        if ts < clip_start_ts or ts > now_ts:
             continue 
             
         hour_comps = history_buckets[ts]
