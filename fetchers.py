@@ -68,7 +68,8 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             aqi_res = calculate_overall_aqi(hour_comps, zone_type="urban")
             final_history.append({
                 "ts": int(ts),
-                "aqi": aqi_res["aqi"]
+                "aqi": aqi_res["aqi"],
+                "us_aqi": aqi_res.get("us_aqi", 0)
             })
         except:
             continue
@@ -354,7 +355,8 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
                 aqi_res = calculate_overall_aqi(hour_comps, zone_type=zone_type)
                 history.append({
                     "ts": times[i],
-                    "aqi": aqi_res["aqi"]
+                    "aqi": aqi_res["aqi"],
+                    "us_aqi": aqi_res.get("us_aqi", 0)
                 })
             except:
                 continue
