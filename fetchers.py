@@ -1,6 +1,5 @@
 import httpx
 import asyncio
-import json
 import os
 from datetime import datetime, timedelta
 from fastapi import HTTPException
@@ -8,42 +7,13 @@ from typing import Dict, Any, List
 
 from config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
 from conversions import calculate_overall_aqi
+import database
 
 _RAM_CACHE = {}
-CACHE_DURATION = 900  # 15 minutes
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "sensor_history.json")
-
-def _load_local_history() -> Dict[str, List[Dict[str, Any]]]:
-    if not os.path.exists(HISTORY_FILE):
-        return {}
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def _save_local_history(zone_id: str, pm25: float, pm10: float):
-    data = _load_local_history()
-    if zone_id not in data:
-        data[zone_id] = []
-    
-    # Append new reading
-    now_ts = datetime.now().timestamp()
-    data[zone_id].append({
-        "ts": now_ts,
-        "pm2_5": pm25,
-        "pm10": pm10
-    })
-
-    cutoff = now_ts - (26 * 3600)
-    data[zone_id] = [p for p in data[zone_id] if p["ts"] > cutoff]
-    
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f)
+CACHE_DURATION = 900 # 15 minutes
 
 def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    local_data = _load_local_history().get(zone_id, [])
-
+    local_data = database.get_history(zone_id, hours=24)
     history_buckets = {}
 
     for pt in om_points:
@@ -52,14 +22,13 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
         history_buckets[ts][pt['param']] = pt['val']
 
     if local_data:
+        # clear estimated PM data to prioritize sensor data
         for ts in history_buckets:
             history_buckets[ts].pop("pm2_5", None)
             history_buckets[ts].pop("pm10", None)
 
-        local_data.sort(key=lambda x: x["ts"])
         for pt in local_data:
             dt = datetime.fromtimestamp(pt["ts"])
-            if dt.minute >= 30: dt += timedelta(hours=1)
             hour_ts = dt.replace(minute=0, second=0, microsecond=0).timestamp()
             
             if hour_ts not in history_buckets: history_buckets[hour_ts] = {}
@@ -69,6 +38,7 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
 
         sorted_times = sorted(history_buckets.keys())
         
+        # linear interpolation for gaps
         for param in ["pm2_5", "pm10"]:
             known = [(t, history_buckets[t][param]) for t in sorted_times if param in history_buckets[t]]
             
@@ -79,7 +49,6 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
 
                     for ts in sorted_times:
                         if t1 < ts < t2:
-                            # Linear Interpolation
                             fraction = (ts - t1) / (t2 - t1)
                             val = v1 + (v2 - v1) * fraction
                             history_buckets[ts][param] = val
@@ -98,7 +67,7 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
         try:
             aqi_res = calculate_overall_aqi(hour_comps, zone_type="urban")
             final_history.append({
-                "ts": int(ts), # Android needs Int
+                "ts": int(ts),
                 "aqi": aqi_res["aqi"]
             })
         except:
@@ -112,8 +81,8 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
         raise HTTPException(status_code=500, detail="Server config error: Missing AirGradient Token")
 
     loc_id = SRINAGAR_AIRGRADIENT_CONFIG["location_id"]
-    now = datetime.now()
-
+    
+    # OpenMeteo Params
     om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
     om_params = {
         "latitude": lat,
@@ -124,6 +93,7 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
         "past_days": 1
     }
 
+    # Fetch Data
     async with httpx.AsyncClient(timeout=20) as client:
         ag_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={airgradient_token}"
         ag_task = client.get(ag_url)
@@ -145,9 +115,9 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
         current_comps["temp"] = d.get("atmp_corrected") if d.get("atmp_corrected") is not None else d.get("atmp")
         current_comps["humidity"] = d.get("rhum_corrected") if d.get("rhum_corrected") is not None else d.get("rhum")
         
-        # SAVE TO HISTORY (The Hack)
+        # Save to DB if valid
         if pm25 is not None and pm10 is not None:
-            _save_local_history("srinagar", pm25, pm10)
+            database.save_reading("srinagar", float(pm25), float(pm10))
     else:
         print(f"AirGradient Error: {ag_resp.text}")
         raise HTTPException(status_code=502, detail="AirGradient fetch failed")
@@ -163,6 +133,7 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
         so2_vals = hourly.get("sulphur_dioxide", [])
         co_vals = hourly.get("carbon_monoxide", [])
         
+        # Build history points
         for i, t in enumerate(times):
             for param in ["o3", "no2", "so2", "co"]:
                 match param:
@@ -176,7 +147,7 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
                     om_points.append({"ts": t, "param": param, "val": vals[i]})
 
         if times:
-            now_ts = now.timestamp()
+            now_ts = datetime.now().timestamp()
             closest_ts = min(times, key=lambda t: abs(t - now_ts))
             idx = times.index(closest_ts)
             
@@ -187,9 +158,25 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
                     case "so2": vals = so2_vals
                     case "co":  vals = co_vals
                     case _:     vals = []
+
+                found_val = None
+                for step in range(0, 6):
+                    check_idx = idx - step
+                    if 0 <= check_idx < len(vals) and vals[check_idx] is not None:
+                        found_val = vals[check_idx]
+                        break
                 
-                if idx < len(vals) and vals[idx] is not None:
-                    current_comps[param] = vals[idx]
+                if found_val is not None:
+                    current_comps[param] = found_val
+
+    current_comps = {k: v for k, v in current_comps.items() if v is not None}
+
+    if "pm2_5" not in current_comps:
+        db_history = database.get_history("srinagar", hours=2)
+        if db_history:
+            last_pt = db_history[-1]
+            current_comps["pm2_5"] = last_pt["pm2_5"]
+            current_comps["pm10"] = last_pt["pm10"]
 
     history = _get_merged_history("srinagar", om_points)
 
@@ -204,8 +191,8 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
         raise HTTPException(status_code=500, detail="Server config error: Missing Jammu AirGradient Token")
 
     loc_id = JAMMU_AIRGRADIENT_CONFIG["location_id"]
-    now = datetime.now()
 
+    # OpenMeteo Params
     om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
     om_params = {
         "latitude": lat,
@@ -216,6 +203,7 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
         "past_days": 1
     }
 
+    # Fetch Data
     async with httpx.AsyncClient(timeout=20) as client:
         ag_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={jammu_airgradient_token}"
         ag_task = client.get(ag_url)
@@ -237,13 +225,13 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
         current_comps["temp"] = d.get("atmp_corrected") if d.get("atmp_corrected") is not None else d.get("atmp")
         current_comps["humidity"] = d.get("rhum_corrected") if d.get("rhum_corrected") is not None else d.get("rhum")
 
+        # Save to DB if valid
         if pm25 is not None and pm10 is not None:
-            _save_local_history("jammu_city", pm25, pm10)
-
+            database.save_reading("jammu_city", float(pm25), float(pm10))
     else:
         print(f"AirGradient Error: {ag_resp.text}")
         raise HTTPException(status_code=502, detail="AirGradient fetch failed")
-        
+
     om_points = []
     if om_resp.status_code == 200:
         om_json = om_resp.json()
@@ -255,6 +243,7 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
         so2_vals = hourly.get("sulphur_dioxide", [])
         co_vals = hourly.get("carbon_monoxide", [])
         
+        # Build history points
         for i, t in enumerate(times):
             for param in ["o3", "no2", "so2", "co"]:
                 match param:
@@ -268,7 +257,7 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
                     om_points.append({"ts": t, "param": param, "val": vals[i]})
 
         if times:
-            now_ts = now.timestamp()
+            now_ts = datetime.now().timestamp()
             closest_ts = min(times, key=lambda t: abs(t - now_ts))
             idx = times.index(closest_ts)
             
@@ -279,9 +268,25 @@ async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urba
                     case "so2": vals = so2_vals
                     case "co":  vals = co_vals
                     case _:     vals = []
+
+                found_val = None
+                for step in range(0, 6):
+                    check_idx = idx - step
+                    if 0 <= check_idx < len(vals) and vals[check_idx] is not None:
+                        found_val = vals[check_idx]
+                        break
                 
-                if idx < len(vals) and vals[idx] is not None:
-                    current_comps[param] = vals[idx]
+                if found_val is not None:
+                    current_comps[param] = found_val
+
+    current_comps = {k: v for k, v in current_comps.items() if v is not None}
+
+    if "pm2_5" not in current_comps:
+        db_history = database.get_history("jammu_city", hours=2)
+        if db_history:
+            last_pt = db_history[-1]
+            current_comps["pm2_5"] = last_pt["pm2_5"]
+            current_comps["pm10"] = last_pt["pm10"]
 
     history = _get_merged_history("jammu_city", om_points)
 
@@ -332,7 +337,7 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
         history = []
 
         for i, t in enumerate(times):
-            if t < start_ts or t > now_ts + 3600:
+            if t < start_ts or t > now_ts:
                 continue
 
             hour_comps = {
@@ -429,16 +434,6 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         if cached_data:
             return cached_data
         raise e
-
-async def start_background_loop():
-    print("--- Background Scheduler Started ---")
-    while True:
-        try:
-            await update_all_zones_background()
-        except Exception as e:
-            print(f"Error in background loop: {e}")
-
-        await asyncio.sleep(CACHE_DURATION)
 
 async def update_all_zones_background():
     print(f"--- Updating Zones at {datetime.now()} ---")

@@ -80,7 +80,6 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 ```
 AIRGRADIENT_TOKEN=yourkeyhere
 JAMMU_AIRGRADIENT_TOKEN=yourkeyhere
-
 ```
 
 ## Running

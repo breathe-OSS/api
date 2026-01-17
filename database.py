@@ -1,0 +1,52 @@
+import sqlite3
+import time
+import os
+
+DB_FILE = os.path.join(os.path.dirname(__file__), "breathe.db")
+
+def get_connection():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS sensor_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zone_id TEXT NOT NULL,
+            timestamp REAL NOT NULL,
+            pm2_5 REAL,
+            pm10 REAL
+        )
+    ''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_zone_time ON sensor_readings (zone_id, timestamp)')
+    conn.commit()
+    conn.close()
+
+def save_reading(zone_id, pm25, pm10):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO sensor_readings (zone_id, timestamp, pm2_5, pm10)
+        VALUES (?, ?, ?, ?)
+    ''', (zone_id, time.time(), pm25, pm10))
+    conn.commit()
+    conn.close()
+
+def get_history(zone_id, hours=24):
+    conn = get_connection()
+    c = conn.cursor()
+    cutoff = time.time() - (hours * 3600)
+    c.execute('''
+        SELECT timestamp as ts, pm2_5, pm10 
+        FROM sensor_readings 
+        WHERE zone_id = ? AND timestamp > ?
+        ORDER BY timestamp ASC
+    ''', (zone_id, cutoff))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+init_db()
