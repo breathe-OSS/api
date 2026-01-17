@@ -18,22 +18,30 @@ def init_db():
             zone_id TEXT NOT NULL,
             timestamp REAL NOT NULL,
             pm2_5 REAL,
-            pm10 REAL
+            pm10 REAL,
+            UNIQUE(zone_id, timestamp)
         )
     ''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_zone_time ON sensor_readings (zone_id, timestamp)')
     conn.commit()
     conn.close()
 
-def save_reading(zone_id, pm25, pm10):
+def save_reading(zone_id, pm25, pm10, timestamp=None):
+    if timestamp is None:
+        timestamp = time.time()
+        
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO sensor_readings (zone_id, timestamp, pm2_5, pm10)
-        VALUES (?, ?, ?, ?)
-    ''', (zone_id, time.time(), pm25, pm10))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute('''
+            INSERT OR IGNORE INTO sensor_readings (zone_id, timestamp, pm2_5, pm10)
+            VALUES (?, ?, ?, ?)
+        ''', (zone_id, timestamp, pm25, pm10))
+        conn.commit()
+    except Exception as e:
+        print(f"DB Save Error: {e}")
+    finally:
+        conn.close()
 
 def get_history(zone_id, hours=24):
     conn = get_connection()
