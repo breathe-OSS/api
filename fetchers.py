@@ -337,8 +337,12 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         
         WARNING_TEXT = "Warning: Unnatural spikes in sensors could be influenced by other atmospheric factors at the moment and this may not reflect the actual readings of the region"
 
-        # check for absolute limit (> 450)
-        if current_aqi > 450:
+        # Check for absolute limits (PM2.5 > 650 OR PM10 > 600)
+        # Using raw_comps since it holds the direct concentration values
+        pm25_val = raw_comps.get("pm2_5", 0)
+        pm10_val = raw_comps.get("pm10", 0)
+
+        if pm25_val > 650 or pm10_val > 600:
             warning_msg = WARNING_TEXT
 
         def get_past_aqi(target_ts, history_list, tolerance=1800):
@@ -357,8 +361,8 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             if val_1h is not None:
                 trend_1h = current_aqi - val_1h
                 
-                # check for spikes (> 150 jump in 1h)
-                # only apply if we haven't already set the warning from the > 450 check
+                # Check for spikes (> 150 AQI jump in 1h)
+                # Only apply if we haven't already triggered the warning from the absolute limit check
                 if not warning_msg and (current_aqi - val_1h) > 150: 
                     warning_msg = WARNING_TEXT
             
