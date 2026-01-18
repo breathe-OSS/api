@@ -40,11 +40,13 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 ├─ api/
 │  ├─ main.py
 │  ├─ routes.py
+│  ├─ database.py
 │  ├─ fetchers.py
 │  ├─ conversions.py
 │  ├─ config.py
 │  ├─ zones.json
 │  ├─ aqi_breakpoints.json
+│  ├─ aqi_us_breakpoints.json
 │  └─ .env
 ```
 
@@ -53,9 +55,13 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
   Initializes the FastAPI application and starts a background scheduler. This scheduler runs every 15 minutes to fetch fresh data for all zones, ensuring the app serves cached data instantly without hitting API rate limits during user requests.
 - `routes.py`
   Generates all `/aqi/<zone>` endpoints dynamically based on`zones.json`. Also exposes `/aqi/zone/{zone_id}`.
+- `database.py`
+  Holds the code for our Postgres database storage for graph plotting and history.
 - `fetchers.py`
    contains data fetch logic.
    `fetch_openmeteo_live` queries the OpenMeteo Air Quality API for a precise real-time satellite-based pollutant data.
+   `fetch_airgradient_common` holds the common code required to call the AirGradient API for every zone.
+   `fetch_airgradient_jammu` and `fetch_airgradient_srinagar` call the specific API tokens for  both regions.
    `get_zone_data` implements the caching strategy. it checks the internal server memory (RAM) first. If data is missing or older than 15 minutes, it fetches fresh data from the provider and updates the cache.
 - `conversions.py`
   Handles the mathematics of AQI calculation.
@@ -67,7 +73,7 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 - `zones.json`
   contains all zone definitions with fixed ids, names, providers, and coordinates.
 - `aqi_breakpoints.json`
-  contains all us epa breakpoint tables for pm2.5, pm10, co, no2, so2, and o3.
+  contains all indian aqi breakpoint tables for pm2.5, pm10, co, no2, so2, and o3.
 
 ## Requirements
 - python ≥ 3.10
@@ -92,6 +98,9 @@ From the `api` directory:
 
 - Srinagar Special Endpoint:
 `GET /aqi/srinagar`
+
+- Jammu Special Endpoint:
+`GET /aqi/jammu_city`
 
 - Generic Lookup:
 `GET /aqi/zone/{zone_id}`
