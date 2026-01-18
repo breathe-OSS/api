@@ -118,16 +118,24 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             
     return final_history
 
-async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "hills") -> Dict[str, Any]:
-    if not airgradient_token:
-        raise HTTPException(status_code=500, detail="Missing AG Token")
+async def fetch_airgradient_common(
+    zone_id: str,
+    loc_id: int,
+    token: str,
+    lat: float,
+    lon: float,
+    zone_type: str = "urban"
+) -> Dict[str, Any]:
+    """
+    Common fetcher for any AirGradient zone.
+    """
+    if not token:
+        raise HTTPException(status_code=500, detail=f"Missing AG Token for {zone_id}")
 
-    loc_id = SRINAGAR_AIRGRADIENT_CONFIG["location_id"]
-
-    await ensure_history_exists("srinagar", loc_id, airgradient_token)
+    await ensure_history_exists(zone_id, loc_id, token)
 
     async with httpx.AsyncClient(timeout=20) as client:
-        curr_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={airgradient_token}"
+        curr_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={token}"
         task_curr = client.get(curr_url)
         
         om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -155,9 +163,11 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
         current_comps["temp"] = d.get("atmp_corrected") or d.get("atmp")
         current_comps["humidity"] = d.get("rhum_corrected") or d.get("rhum")
         
-        # Save NEW reading to DB
+        # Save reading to DB
         if pm25 is not None:
-            database.save_reading("srinagar", float(pm25), float(pm10) if pm10 else 0.0)
+            database.save_reading(zone_id, float(pm25), float(pm10) if pm10 else 0.0)
+    else:
+        print(f"AG Live Fetch Failed for {zone_id}: {ag_resp.status_code}")
 
     om_points = []
     if om_resp.status_code == 200:
@@ -202,96 +212,7 @@ async def fetch_airgradient_srinagar(lat: float, lon: float, zone_type: str = "h
                 if found_val is not None:
                     current_comps[param] = found_val
 
-    history = _get_merged_history("srinagar", om_points)
-
-    return {
-        "current_comps": current_comps,
-        "history": history 
-    }
-
-async def fetch_airgradient_jammu(lat: float, lon: float, zone_type: str = "urban") -> Dict[str, Any]:
-    if not jammu_airgradient_token:
-        raise HTTPException(status_code=500, detail="Missing Jammu AG Token")
-
-    loc_id = JAMMU_AIRGRADIENT_CONFIG["location_id"]
-
-    await ensure_history_exists("jammu_city", loc_id, jammu_airgradient_token)
-
-    async with httpx.AsyncClient(timeout=20) as client:
-        curr_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={jammu_airgradient_token}"
-        task_curr = client.get(curr_url)
-        
-        om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-        om_params = {
-            "latitude": lat, "longitude": lon,
-            "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
-            "timezone": "auto", "timeformat": "unixtime", "past_days": 1
-        }
-        task_om = client.get(om_url, params=om_params)
-        
-        results = await asyncio.gather(task_curr, task_om)
-    
-    ag_resp = results[0]
-    om_resp = results[1]
-    
-    current_comps = {}
-    
-    if ag_resp.status_code == 200:
-        d = ag_resp.json()
-        pm25 = d.get("pm02_corrected") or d.get("pm02")
-        pm10 = d.get("pm10_corrected") or d.get("pm10")
-        current_comps["pm2_5"] = pm25
-        current_comps["pm10"] = pm10
-        current_comps["temp"] = d.get("atmp_corrected") or d.get("atmp")
-        current_comps["humidity"] = d.get("rhum_corrected") or d.get("rhum")
-        
-        if pm25 is not None:
-            database.save_reading("jammu_city", float(pm25), float(pm10) if pm10 else 0.0)
-
-    om_points = []
-    if om_resp.status_code == 200:
-        om_json = om_resp.json()
-        hourly = om_json.get("hourly", {})
-        times = hourly.get("time", [])
-        o3_vals = hourly.get("ozone", [])
-        no2_vals = hourly.get("nitrogen_dioxide", [])
-        so2_vals = hourly.get("sulphur_dioxide", [])
-        co_vals = hourly.get("carbon_monoxide", [])
-        
-        for i, t in enumerate(times):
-            for param in ["o3", "no2", "so2", "co"]:
-                match param:
-                    case "o3": vals = o3_vals
-                    case "no2": vals = no2_vals
-                    case "so2": vals = so2_vals
-                    case "co": vals = co_vals
-                    case _: vals = []
-                if i < len(vals) and vals[i] is not None:
-                    om_points.append({"ts": t, "param": param, "val": vals[i]})
-        
-        if times:
-            now_ts = datetime.now().timestamp()
-            closest_ts = min(times, key=lambda t: abs(t - now_ts))
-            idx = times.index(closest_ts)
-            
-            for param in ["o3", "no2", "so2", "co"]:
-                match param:
-                    case "o3": vals = o3_vals
-                    case "no2": vals = no2_vals
-                    case "so2": vals = so2_vals
-                    case "co": vals = co_vals
-                    case _: vals = []
-                
-                found_val = None
-                for step in range(0, 6):
-                    check_idx = idx - step
-                    if 0 <= check_idx < len(vals) and vals[check_idx] is not None:
-                        found_val = vals[check_idx]
-                        break
-                if found_val is not None:
-                    current_comps[param] = found_val
-
-    history = _get_merged_history("jammu_city", om_points)
+    history = _get_merged_history(zone_id, om_points)
 
     return {
         "current_comps": current_comps,
@@ -379,11 +300,27 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
 
     try:
         if zone_id == "srinagar":
-            fetched_data = await fetch_airgradient_srinagar(lat, lon, zone_type=zone_type)
+            fetched_data = await fetch_airgradient_common(
+                zone_id="srinagar",
+                loc_id=SRINAGAR_AIRGRADIENT_CONFIG["location_id"],
+                token=airgradient_token,
+                lat=lat,
+                lon=lon,
+                zone_type=zone_type
+            )
             source_name = "airgradient + openmeteo"
+            
         elif zone_id == "jammu_city":
-            fetched_data = await fetch_airgradient_jammu(lat, lon, zone_type=zone_type)
+            fetched_data = await fetch_airgradient_common(
+                zone_id="jammu_city",
+                loc_id=JAMMU_AIRGRADIENT_CONFIG["location_id"],
+                token=jammu_airgradient_token,
+                lat=lat,
+                lon=lon,
+                zone_type=zone_type
+            )
             source_name = "airgradient + openmeteo"
+            
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
             source_name = "openmeteo air pollution api"
