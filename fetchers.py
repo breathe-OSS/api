@@ -396,7 +396,14 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
 
         trend_1h = None
         trend_24h = None
+        warning_msg = None
         
+        WARNING_TEXT = "Warning: Unnatural spikes in sensors could be influenced by other atmospheric factors at the moment and this may not reflect the actual readings of the region"
+
+        # check for absolute limit (> 450)
+        if current_aqi > 450:
+            warning_msg = WARNING_TEXT
+
         def get_past_aqi(target_ts, history_list, tolerance=1800):
             for point in history_list:
                 if abs(point['ts'] - target_ts) <= tolerance:
@@ -412,6 +419,11 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
 
             if val_1h is not None:
                 trend_1h = current_aqi - val_1h
+                
+                # check for spikes (> 150 jump in 1h)
+                # only apply if we haven't already set the warning from the > 450 check
+                if not warning_msg and (current_aqi - val_1h) > 150: 
+                    warning_msg = WARNING_TEXT
             
             if val_24h is not None:
                 trend_24h = current_aqi - val_24h
@@ -427,6 +439,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
                 "change_1h": trend_1h, 
                 "change_24h": trend_24h
             },
+            "warning": warning_msg, 
             **aqi_data
         }
 
