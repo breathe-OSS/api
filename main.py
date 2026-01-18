@@ -27,7 +27,12 @@ app = FastAPI(title="breathe backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for devs: allows ALL origins. In prod, change to ["https://your-site.com"]
+    allow_origins=[
+        "https://breatheoss.app",       
+        "https://www.breatheoss.app",   
+        "http://localhost:3000",        
+        "http://localhost:8080",        
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
