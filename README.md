@@ -36,44 +36,54 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
   - This **single highest value** becomes the reported Overall AQI.
 
 ## Structure
-```breathe/
-├─ api/
-│  ├─ main.py
-│  ├─ routes.py
-│  ├─ database.py
-│  ├─ fetchers.py
-│  ├─ conversions.py
-│  ├─ config.py
-│  ├─ zones.json
-│  ├─ aqi_breakpoints.json
-│  ├─ aqi_us_breakpoints.json
-│  └─ .env
+```
+api/
+├── main.py                     # Entry point
+├── Procfile
+├── requirements.txt
+├── .env
+└── app/
+    ├── __init__.py
+    ├── api/                    # Routes & endpoints
+    │   ├── __init__.py
+    │   └── routes.py
+    ├── core/                   # Config, database, conversions
+    │   ├── __init__.py
+    │   ├── config.py
+    │   ├── database.py
+    │   └── conversions.py
+    ├── data/                   # Static JSON data files
+    │   ├── __init__.py
+    │   ├── zones.json
+    │   └── aqi_breakpoints.json
+    └── services/               # Data fetching & processing
+        ├── __init__.py
+        └── fetchers.py
 ```
 
 ## Main modules
 - `main.py`
   Initializes the FastAPI application and starts a background scheduler. This scheduler runs every 15 minutes to fetch fresh data for all zones, ensuring the app serves cached data instantly without hitting API rate limits during user requests.
-- `routes.py`
-  Generates all `/aqi/<zone>` endpoints dynamically based on`zones.json`. Also exposes `/aqi/zone/{zone_id}`.
-- `database.py`
+- `app/api/routes.py`
+  Generates all `/aqi/<zone>` endpoints dynamically based on `zones.json`. Also exposes `/aqi/zone/{zone_id}` and `/zones`.
+- `app/core/database.py`
   Holds the code for our Postgres database storage for graph plotting and history.
-- `fetchers.py`
-   contains data fetch logic.
-   `fetch_openmeteo_live` queries the OpenMeteo Air Quality API for a precise real-time satellite-based pollutant data.
-   `fetch_airgradient_common` holds the common code required to call the AirGradient API for every zone.
-   `fetch_airgradient_jammu` and `fetch_airgradient_srinagar` call the specific API tokens for  both regions.
-   `get_zone_data` implements the caching strategy. it checks the internal server memory (RAM) first. If data is missing or older than 15 minutes, it fetches fresh data from the provider and updates the cache.
-- `conversions.py`
+- `app/core/config.py`
+  Loads environment variables, `zones.json`, and `aqi_breakpoints.json`.
+- `app/core/conversions.py`
   Handles the mathematics of AQI calculation.
   - Converts Carbon Monoxide (CO) from µg/m³ to mg/m³ to match Indian standards.
   - Maps raw concentrations to the official Indian CPCB sub-indices.
   - Determines the final AQI based on the dominant pollutant.
-- `config.py`
-  loads environment variables, zones.json, and aqi_breakpoints.json.
-- `zones.json`
-  contains all zone definitions with fixed ids, names, providers, and coordinates.
-- `aqi_breakpoints.json`
-  contains all indian aqi breakpoint tables for pm2.5, pm10, co, no2, so2, and o3.
+- `app/services/fetchers.py`
+   Contains data fetch logic.
+   `fetch_openmeteo_live` queries the OpenMeteo Air Quality API for a precise real-time satellite-based pollutant data.
+   `fetch_airgradient_common` holds the common code required to call the AirGradient API for every zone.
+   `get_zone_data` implements the caching strategy. It checks the internal server memory (RAM) first. If data is missing or older than 15 minutes, it fetches fresh data from the provider and updates the cache.
+- `app/data/zones.json`
+  Contains all zone definitions with fixed ids, names, providers, and coordinates.
+- `app/data/aqi_breakpoints.json`
+  Contains all Indian AQI breakpoint tables for PM2.5, PM10, CO, NO2, SO2, and O3.
 
 ## Requirements
 - python ≥ 3.10

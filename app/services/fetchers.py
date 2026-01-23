@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from typing import Dict, Any, List
 
-from config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
-from conversions import calculate_overall_aqi
-import database
+from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
+from app.core.conversions import calculate_overall_aqi
+from app.core import database
 
 _RAM_CACHE = {}
 CACHE_DURATION = 900  # 15 minutes

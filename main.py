@@ -2,8 +2,8 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from routes import register_zone_routes
-from fetchers import update_all_zones_background
+from app.api.routes import register_zone_routes
+from app.services.fetchers import update_all_zones_background
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

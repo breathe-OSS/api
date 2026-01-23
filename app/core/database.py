@@ -4,7 +4,7 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-DB_FILE = os.path.join(os.path.dirname(__file__), "breathe.db")
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "breathe.db")
 
 def get_connection():
     db_url = os.getenv("DATABASE_URL")

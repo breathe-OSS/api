@@ -1,6 +1,6 @@
 import math
 from typing import Dict, Any, Optional, Tuple, Union
-from config import AQI_BREAKPOINTS
+from app.core.config import AQI_BREAKPOINTS
 
 # US EPA Breakpoints
 US_BREAKPOINTS = {

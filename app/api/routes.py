@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from typing import Callable, Any, Dict
 
-from config import ZONES
-from fetchers import get_zone_data
+from app.core.config import ZONES
+from app.services.fetchers import get_zone_data
 
 def register_zone_routes(app: FastAPI) -> None:
     def _make_zone_handler(z: Dict[str, Any]) -> Callable[[], Any]:

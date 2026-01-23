@@ -5,10 +5,10 @@ from typing import Dict, Any
 
 load_dotenv()
 
-_here = os.path.dirname(__file__)
+_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 def _load_json(fname: str) -> Dict[str, Any]:
-    p = os.path.join(_here, fname)
+    p = os.path.join(_data_dir, fname)
     with open(p, "r") as f:
         return json.load(f)
 
