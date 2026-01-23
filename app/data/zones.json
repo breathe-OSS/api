@@ -266,7 +266,7 @@
   "srinagar": {
     "id": "srinagar",
     "name": "Srinagar",
-    "provider": "airgradient",
+    "provider": "openmeteo",
     "lat": 34.0709,
     "lon": 74.8122,
     "zone_type": "urban"
