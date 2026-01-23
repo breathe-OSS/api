@@ -309,17 +309,18 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
                 zone_type=zone_type
             )
             source_name = "airgradient + openmeteo"
-            
-        elif zone_id == "jammu_city":
-            fetched_data = await fetch_airgradient_common(
-                zone_id="jammu_city",
-                loc_id=JAMMU_AIRGRADIENT_CONFIG["location_id"],
-                token=jammu_airgradient_token,
-                lat=lat,
-                lon=lon,
-                zone_type=zone_type
-            )
-            source_name = "airgradient + openmeteo"
+
+            # Jammu node is down!
+        #elif zone_id == "jammu_city":
+            #fetched_data = await fetch_airgradient_common(
+                #zone_id="jammu_city",
+                #loc_id=JAMMU_AIRGRADIENT_CONFIG["location_id"],
+                #token=jammu_airgradient_token,
+                #lat=lat,
+                #lon=lon,
+                #zone_type=zone_type
+            #)
+            #source_name = "airgradient + openmeteo"
             
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
