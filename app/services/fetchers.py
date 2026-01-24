@@ -162,6 +162,15 @@ async def fetch_airgradient_common(
         current_comps["pm10"] = pm10
         current_comps["temp"] = d.get("atmp_corrected") or d.get("atmp")
         current_comps["humidity"] = d.get("rhum_corrected") or d.get("rhum")
+
+        ag_timestamp = d.get("timestamp")
+        if ag_timestamp:
+            # API returns ISO format
+            try:
+                dt = datetime.fromisoformat(ag_timestamp.replace("Z", "+00:00"))
+                current_comps["_ag_timestamp"] = dt.timestamp()
+            except:
+                pass
         
         # Save reading to DB
         if pm25 is not None:
@@ -299,29 +308,41 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             return cached_data
 
     try:
-        if zone_id == "srinagar":
-            fetched_data = await fetch_airgradient_common(
-                zone_id="srinagar",
-                loc_id=SRINAGAR_AIRGRADIENT_CONFIG["location_id"],
-                token=airgradient_token,
-                lat=lat,
-                lon=lon,
-                zone_type=zone_type
-            )
-            source_name = "airgradient + openmeteo"
-
-            # Jammu node is down!
-        #elif zone_id == "jammu_city":
-            #fetched_data = await fetch_airgradient_common(
-                #zone_id="jammu_city",
-                #loc_id=JAMMU_AIRGRADIENT_CONFIG["location_id"],
-                #token=jammu_airgradient_token,
-                #lat=lat,
-                #lon=lon,
-                #zone_type=zone_type
-            #)
-            #source_name = "airgradient + openmeteo"
-            
+        sensor_offline_warning = None
+        
+        if zone_id in ("srinagar", "jammu_city"):
+            # Try AG and fallback to Open-Meteo if sensor is down
+            try:
+                config = SRINAGAR_AIRGRADIENT_CONFIG if zone_id == "srinagar" else JAMMU_AIRGRADIENT_CONFIG
+                token = airgradient_token if zone_id == "srinagar" else jammu_airgradient_token
+                
+                fetched_data = await fetch_airgradient_common(
+                    zone_id=zone_id,
+                    loc_id=config["location_id"],
+                    token=token,
+                    lat=lat,
+                    lon=lon,
+                    zone_type=zone_type
+                )
+                
+                # Check if we got valid PM data
+                pm25 = fetched_data["current_comps"].get("pm2_5")
+                if pm25 is None:
+                    raise ValueError("No PM2.5 data from sensor")
+                
+                # Older than 1 hour = sensor offline
+                ag_timestamp = fetched_data["current_comps"].get("_ag_timestamp")
+                if ag_timestamp:
+                    data_age = current_time - ag_timestamp
+                    if data_age > 3600:  # 1 hour
+                        raise ValueError(f"Sensor data is stale ({int(data_age/60)} minutes old)")
+                    
+                source_name = "airgradient + openmeteo"
+            except Exception as e:
+                print(f"Sensor offline for {zone_id}: {e}, falling back to Open-Meteo")
+                fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+                source_name = "openmeteo air pollution api"
+                sensor_offline_warning = "Physical sensor temporarily offline. Using satellite-based estimates from Open-Meteo."
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
             source_name = "openmeteo air pollution api"
@@ -369,6 +390,13 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             
             if val_24h is not None:
                 trend_24h = current_aqi - val_24h
+
+        # Merge sensor offline warning with any existing warning
+        if sensor_offline_warning:
+            if warning_msg:
+                warning_msg = f"{sensor_offline_warning}\n\n{warning_msg}"
+            else:
+                warning_msg = sensor_offline_warning
 
         full_payload = {
             "zone_id": zone_id,
