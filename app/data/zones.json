@@ -74,7 +74,7 @@
   "jammu_city": {
     "id": "jammu_city",
     "name": "Jammu",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 32.7169,
     "lon": 74.8609,
     "zone_type": "urban"
