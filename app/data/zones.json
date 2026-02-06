@@ -210,7 +210,7 @@
   "rajouri_town": {
     "id": "rajouri_town",
     "name": "Rajouri",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 33.3750,
     "lon": 74.3150,
     "zone_type": "hills"

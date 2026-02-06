@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from typing import Dict, Any, List
 
-from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
+from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, RAJOURI_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
 
@@ -310,11 +310,18 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
     try:
         sensor_offline_warning = None
         
-        if zone_id in ("srinagar", "jammu_city"):
+        if zone_id in ("srinagar", "jammu_city", "rajouri_town"):
             # Try AG and fallback to Open-Meteo if sensor is down
             try:
-                config = SRINAGAR_AIRGRADIENT_CONFIG if zone_id == "srinagar" else JAMMU_AIRGRADIENT_CONFIG
-                token = airgradient_token if zone_id == "srinagar" else jammu_airgradient_token
+                if zone_id == "srinagar":
+                    config = SRINAGAR_AIRGRADIENT_CONFIG
+                    token = airgradient_token
+                elif zone_id == "jammu_city":
+                    config = JAMMU_AIRGRADIENT_CONFIG
+                    token = jammu_airgradient_token
+                else:  # rajouri_town
+                    config = RAJOURI_AIRGRADIENT_CONFIG
+                    token = jammu_airgradient_token
                 
                 fetched_data = await fetch_airgradient_common(
                     zone_id=zone_id,
