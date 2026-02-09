@@ -91,6 +91,7 @@ api/
 - httpx
 - python-dotenv
 - uvicorn
+- psycopg2-binary ≥ 2.9.0
 
 ## Environment Variables
 ```
