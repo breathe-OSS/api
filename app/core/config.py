@@ -17,13 +17,15 @@ AQI_BREAKPOINTS = _load_json("aqi_breakpoints.json")
 airgradient_token = os.getenv("AIRGRADIENT_TOKEN")
 jammu_airgradient_token = os.getenv("JAMMU_AIRGRADIENT_TOKEN") # this is currently being used for jammu and rajouri, and will probably will also be used for future sensors
 
-SRINAGAR_AIRGRADIENT_CONFIG = {
-    "location_id": 172681
-}
+SRINAGAR_AIRGRADIENT_NODES = [
+    {"location_id": 172681, "name": "Kanipora"},
+    {"location_id": 170398, "name": "Bemina"},
+]
 
-JAMMU_AIRGRADIENT_CONFIG = {
-    "location_id": 182171
-}
+JAMMU_AIRGRADIENT_NODES = [
+    {"location_id": 182171, "name": "Talab Tillo"},
+    {"location_id": 184303, "name": "Gandhi Nagar"},
+]
 
 RAJOURI_AIRGRADIENT_CONFIG = {
     "location_id": 184149
