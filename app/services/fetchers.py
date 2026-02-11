@@ -4,12 +4,14 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from typing import Dict, Any, List
 
-from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_CONFIG, JAMMU_AIRGRADIENT_CONFIG, RAJOURI_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
+from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_NODES, JAMMU_AIRGRADIENT_NODES, RAJOURI_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
 
 _RAM_CACHE = {}
+_SPIKE_CACHE = {}
 CACHE_DURATION = 900  # 15 minutes
+SPIKE_GRACE_PERIOD = 3600  # 1 hour
 
 async def fetch_airgradient_history(client: httpx.AsyncClient, loc_id: int, token: str) -> List[Dict[str, Any]]:
     # 1 day of history
@@ -228,6 +230,210 @@ async def fetch_airgradient_common(
         "history": history 
     }
 
+async def fetch_multi_node_airgradient(
+    zone_id: str,
+    nodes: List[Dict],
+    token: str,
+    lat: float,
+    lon: float,
+    zone_type: str = "urban"
+) -> Dict[str, Any]:
+    if not token:
+        raise HTTPException(status_code=500, detail=f"Missing AG Token for {zone_id}")
+
+    current_time = datetime.now().timestamp()
+    MAX_AGE_SECONDS = 3600  # 1 hour
+    
+    async with httpx.AsyncClient(timeout=20) as client:
+        curr_tasks = []
+        for node in nodes:
+            url = f"https://api.airgradient.com/public/api/v1/locations/{node['location_id']}/measures/current?token={token}"
+            curr_tasks.append(client.get(url))
+        
+        om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+        om_params = {
+            "latitude": lat, "longitude": lon,
+            "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
+            "timezone": "auto", "timeformat": "unixtime", "past_days": 1
+        }
+        curr_tasks.append(client.get(om_url, params=om_params))
+        
+        results = await asyncio.gather(*curr_tasks, return_exceptions=True)
+    
+    om_resp = results[-1]
+    sensor_responses = results[:-1]
+    
+    valid_readings = []
+    node_statuses = []
+    spike_warnings = []
+    
+    for i, resp in enumerate(sensor_responses):
+        node_cfg = nodes[i]
+        node_name = node_cfg.get("name", f"Node{i+1}")
+        node_cache_key = f"{zone_id}_{node_name}"
+        
+        if node_cache_key in _SPIKE_CACHE:
+            spike_time = _SPIKE_CACHE[node_cache_key]
+            time_since_spike = current_time - spike_time
+            
+            if time_since_spike < SPIKE_GRACE_PERIOD:
+                remaining_minutes = int((SPIKE_GRACE_PERIOD - time_since_spike) / 60)
+                node_statuses.append({"node": node_name, "status": "grace_period", "remaining_minutes": remaining_minutes})
+                spike_warnings.append(f"{node_name}: excluded due to recent spike (grace period: {remaining_minutes} mins remaining)")
+                continue
+            else:
+                del _SPIKE_CACHE[node_cache_key]
+        
+        if isinstance(resp, Exception):
+            node_statuses.append({"node": node_name, "status": "error"})
+            continue
+            
+        if resp.status_code != 200:
+            node_statuses.append({"node": node_name, "status": "offline"})
+            continue
+        
+        data = resp.json()
+        pm25 = data.get("pm02_corrected") or data.get("pm02")
+        pm10 = data.get("pm10_corrected") or data.get("pm10")
+        
+        if pm25 is None:
+            node_statuses.append({"node": node_name, "status": "no_data"})
+            continue
+        
+        # Check data freshness
+        ag_timestamp = data.get("timestamp")
+        data_age = None
+        reading_ts = current_time
+        
+        if ag_timestamp:
+            try:
+                dt = datetime.fromisoformat(ag_timestamp.replace("Z", "+00:00"))
+                reading_ts = dt.timestamp()
+                data_age = current_time - reading_ts
+            except:
+                pass
+        
+        if data_age and data_age > MAX_AGE_SECONDS:
+            node_statuses.append({"node": node_name, "status": "stale", "age_minutes": int(data_age/60)})
+            continue
+        
+        pm25_val = float(pm25)
+        pm10_val = float(pm10) if pm10 else 0.0
+        
+        if pm25_val > 650 or pm10_val > 600:
+            node_statuses.append({"node": node_name, "status": "spike_detected", "pm2_5": pm25_val, "pm10": pm10_val})
+            spike_warnings.append(f"{node_name}: absolute threshold exceeded (PM2.5={pm25_val:.0f} or PM10={pm10_val:.0f})")
+            _SPIKE_CACHE[node_cache_key] = current_time
+            continue
+        
+        node_zone_id = f"{zone_id}_{node_name}"
+        node_history = database.get_history(node_zone_id, hours=2)
+        
+        if node_history:
+            target_ts = reading_ts - 3600
+            closest_reading = min(node_history, key=lambda h: abs(h["ts"] - target_ts))
+            
+            time_diff = abs(closest_reading["ts"] - target_ts)
+            if time_diff < 5400:
+                pm25_1h_ago = closest_reading["pm2_5"]
+                pm25_jump = pm25_val - pm25_1h_ago
+                
+                if pm25_jump > 200:
+                    node_statuses.append({"node": node_name, "status": "spike_detected", "pm25_jump": int(pm25_jump)})
+                    spike_warnings.append(f"{node_name}: sudden spike detected (PM2.5 jumped +{int(pm25_jump)} in 1 hour)")
+                    _SPIKE_CACHE[node_cache_key] = current_time
+                    continue
+        
+        valid_readings.append({
+            "pm2_5": pm25_val,
+            "pm10": pm10_val,
+            "temp": data.get("atmp_corrected") or data.get("atmp"),
+            "humidity": data.get("rhum_corrected") or data.get("rhum"),
+            "timestamp": reading_ts,
+            "node_name": node_name
+        })
+        node_statuses.append({"node": node_name, "status": "active"})
+        
+        database.save_reading(f"{zone_id}_{node_name}", pm25_val, pm10_val, timestamp=reading_ts)
+    
+    if not valid_readings:
+        raise ValueError(f"All {len(nodes)} sensor nodes offline or showing spikes")
+    
+    # Average the valid readings
+    merged_pm25 = sum(r["pm2_5"] for r in valid_readings) / len(valid_readings)
+    merged_pm10 = sum(r["pm10"] for r in valid_readings) / len(valid_readings)
+    
+    temp_readings = [r["temp"] for r in valid_readings if r["temp"] is not None]
+    humidity_readings = [r["humidity"] for r in valid_readings if r["humidity"] is not None]
+    
+    current_comps = {
+        "pm2_5": merged_pm25,
+        "pm10": merged_pm10,
+        "temp": sum(temp_readings) / len(temp_readings) if temp_readings else None,
+        "humidity": sum(humidity_readings) / len(humidity_readings) if humidity_readings else None,
+        "_ag_timestamp": max(r["timestamp"] for r in valid_readings),
+        "_node_count": len(valid_readings),
+        "_total_nodes": len(nodes),
+        "_node_statuses": node_statuses
+    }
+    
+    if spike_warnings:
+        current_comps["_spike_warning"] = f"Data from {len(valid_readings)} of {len(nodes)} sensors. " + "; ".join(spike_warnings)
+    
+    database.save_reading(zone_id, merged_pm25, merged_pm10)
+    
+    om_points = []
+    if isinstance(om_resp, Exception) or om_resp.status_code != 200:
+        print(f"OM request failed for {zone_id}")
+    else:
+        om_json = om_resp.json()
+        hourly = om_json.get("hourly", {})
+        times = hourly.get("time", [])
+        o3_vals = hourly.get("ozone", [])
+        no2_vals = hourly.get("nitrogen_dioxide", [])
+        so2_vals = hourly.get("sulphur_dioxide", [])
+        co_vals = hourly.get("carbon_monoxide", [])
+        
+        for i, t in enumerate(times):
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3": vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co": vals = co_vals
+                    case _: vals = []
+                if i < len(vals) and vals[i] is not None:
+                    om_points.append({"ts": t, "param": param, "val": vals[i]})
+        
+        if times:
+            now_ts = datetime.now().timestamp()
+            closest_ts = min(times, key=lambda t: abs(t - now_ts))
+            idx = times.index(closest_ts)
+
+            for param in ["o3", "no2", "so2", "co"]:
+                match param:
+                    case "o3": vals = o3_vals
+                    case "no2": vals = no2_vals
+                    case "so2": vals = so2_vals
+                    case "co": vals = co_vals
+                    case _: vals = []
+                
+                found_val = None
+                for step in range(0, 6):
+                    check_idx = idx - step
+                    if 0 <= check_idx < len(vals) and vals[check_idx] is not None:
+                        found_val = vals[check_idx]
+                        break
+                if found_val is not None:
+                    current_comps[param] = found_val
+    
+    history = _get_merged_history(zone_id, om_points)
+    
+    return {
+        "current_comps": current_comps,
+        "history": history
+    }
+
 async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[str, Any]:
     url = "https://air-quality-api.open-meteo.com/v1/air-quality"
     params = {
@@ -311,40 +517,53 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         sensor_offline_warning = None
         
         if zone_id in ("srinagar", "jammu_city", "rajouri_town"):
-            # Try AG and fallback to Open-Meteo if sensor is down
+            if zone_id == "srinagar":
+                nodes = SRINAGAR_AIRGRADIENT_NODES
+                token = airgradient_token
+            elif zone_id == "jammu_city":
+                nodes = JAMMU_AIRGRADIENT_NODES
+                token = jammu_airgradient_token
+            else:  
+                nodes = [RAJOURI_AIRGRADIENT_CONFIG]  
+                token = jammu_airgradient_token
+            
             try:
-                if zone_id == "srinagar":
-                    config = SRINAGAR_AIRGRADIENT_CONFIG
-                    token = airgradient_token
-                elif zone_id == "jammu_city":
-                    config = JAMMU_AIRGRADIENT_CONFIG
-                    token = jammu_airgradient_token
-                else:  # rajouri_town
-                    config = RAJOURI_AIRGRADIENT_CONFIG
-                    token = jammu_airgradient_token
+                if len(nodes) > 1:
+                    fetched_data = await fetch_multi_node_airgradient(
+                        zone_id=zone_id,
+                        nodes=nodes,
+                        token=token,
+                        lat=lat,
+                        lon=lon,
+                        zone_type=zone_type
+                    )
+                    source_name = f"airgradient ({fetched_data['current_comps']['_node_count']}/{fetched_data['current_comps']['_total_nodes']} sensors) + openmeteo"
+                    
+                    if "_spike_warning" in fetched_data["current_comps"]:
+                        sensor_offline_warning = fetched_data["current_comps"]["_spike_warning"]
+                else:
+                    config = nodes[0]
+                    fetched_data = await fetch_airgradient_common(
+                        zone_id=zone_id,
+                        loc_id=config["location_id"],
+                        token=token,
+                        lat=lat,
+                        lon=lon,
+                        zone_type=zone_type
+                    )
+                    source_name = "airgradient + openmeteo"
                 
-                fetched_data = await fetch_airgradient_common(
-                    zone_id=zone_id,
-                    loc_id=config["location_id"],
-                    token=token,
-                    lat=lat,
-                    lon=lon,
-                    zone_type=zone_type
-                )
-                
-                # Check if we got valid PM data
                 pm25 = fetched_data["current_comps"].get("pm2_5")
                 if pm25 is None:
                     raise ValueError("No PM2.5 data from sensor")
                 
-                # Older than 1 hour = sensor offline
+                # Older than 1 hour = sensor offline (for single node or all nodes)
                 ag_timestamp = fetched_data["current_comps"].get("_ag_timestamp")
                 if ag_timestamp:
                     data_age = current_time - ag_timestamp
                     if data_age > 3600:  # 1 hour
                         raise ValueError(f"Sensor data is stale ({int(data_age/60)} minutes old)")
                     
-                source_name = "airgradient + openmeteo"
             except Exception as e:
                 print(f"Sensor offline for {zone_id}: {e}, falling back to Open-Meteo")
                 fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
