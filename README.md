@@ -79,6 +79,7 @@ api/
    Contains data fetch logic.
    `fetch_openmeteo_live` queries the OpenMeteo Air Quality API for a precise real-time satellite-based pollutant data.
    `fetch_airgradient_common` holds the common code required to call the AirGradient API for every zone.
+`fetch_multi_node_airgradient` Fetches data for nodes that have multiple zones, such as Jammu and Srinagar as of now. It makes an average of the overall area and gives a value, it also has guards for edge case conditions.
    `get_zone_data` implements the caching strategy. It checks the internal server memory (RAM) first. If data is missing or older than 15 minutes, it fetches fresh data from the provider and updates the cache.
 - `app/data/zones.json`
   Contains all zone definitions with fixed ids, names, providers, and coordinates.
