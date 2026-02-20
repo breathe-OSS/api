@@ -103,11 +103,17 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
 
     final_history = []
     
+    has_sensor_data = bool(local_data)
+    
     for ts in sorted_times:
         if ts < clip_start_ts or ts > now_ts:
             continue 
             
         hour_comps = history_buckets[ts]
+        
+        if has_sensor_data and "pm2_5" not in hour_comps:
+            continue
+            
         try:
             aqi_res = calculate_overall_aqi(hour_comps, zone_type="urban")
             final_history.append({
