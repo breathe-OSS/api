@@ -13,7 +13,7 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 
 - PM2.5, PM10, NO2​, SO2​ are maintained in Micrograms per cubic meter (µg/m3).
 
-- The code explicitly detects Carbon Monoxide (co) and divides the value by 1000. This converts the raw µg/m3 value into Milligrams per cubic meter (mg/m3), which is the required unit for the CO breakpoint table.
+- The code explicitly detects Carbon Monoxide (CO) and Methane (CH4) and divides their values by 1000. This converts the raw µg/m3 values into Milligrams per cubic meter (mg/m3). CO conversion is required for the AQI breakpoint table; CH4 is converted for consistency in reporting.
 
 - Methane (CH4) is tracked but not included in AQI calculations.
 

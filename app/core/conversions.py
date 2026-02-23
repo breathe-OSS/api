@@ -72,7 +72,7 @@ def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
     return None
 
 def prepare_for_indian_aqi(pollutant: str, val_ugm3: float) -> float:
-    if pollutant == "co":
+    if pollutant in ["co", "ch4"]:
         return val_ugm3 / 1000.0
     return val_ugm3
 
