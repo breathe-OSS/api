@@ -11,9 +11,11 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
 
 `[2]` Indian AQI standards require specific units for different chemical compounds. The system applies a check (`prepare_for_indian_aqi`) to the raw concentrations (C).
 
-- PM2.5, PM10, NO2​, SO2​, and Ozone (O3​) are maintained in Micrograms per cubic meter (µg/m3).
+- PM2.5, PM10, NO2​, SO2​ are maintained in Micrograms per cubic meter (µg/m3).
 
 - The code explicitly detects Carbon Monoxide (co) and divides the value by 1000. This converts the raw µg/m3 value into Milligrams per cubic meter (mg/m3), which is the required unit for the CO breakpoint table.
+
+- Methane (CH4) is tracked but not included in AQI calculations.
 
 `[3]` Once units are standardized, the system calculates an individual Sub-Index for each pollutant. It does not simply "lookup" a value; it calculates a precise integer using **Linear Interpolation**.
 
@@ -84,7 +86,7 @@ api/
 - `app/data/zones.json`
   Contains all zone definitions with fixed ids, names, providers, and coordinates.
 - `app/data/aqi_breakpoints.json`
-  Contains all Indian AQI breakpoint tables for PM2.5, PM10, CO, NO2, SO2, and O3.
+  Contains all Indian AQI breakpoint tables for PM2.5, PM10, CO, NO2, and SO2.
 
 ## Requirements
 - python ≥ 3.10

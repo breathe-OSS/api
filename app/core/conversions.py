@@ -87,7 +87,7 @@ def calculate_overall_aqi(pollutants_ugm3: Dict[str, float], zone_type: str = "d
         "co": "co", "carbon_monoxide": "co",
         "no2": "no2", "nitrogen_dioxide": "no2",
         "so2": "so2", "sulphur_dioxide": "so2",
-        "o3": "o3", "ozone": "o3"
+        "ch4": "ch4", "methane": "ch4"
     }
 
     for raw_key, val in pollutants_ugm3.items():

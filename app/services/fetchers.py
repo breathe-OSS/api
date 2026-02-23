@@ -149,7 +149,7 @@ async def fetch_airgradient_common(
         om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
         om_params = {
             "latitude": lat, "longitude": lon,
-            "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
+            "hourly": "methane,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
             "timezone": "auto", "timeformat": "unixtime", "past_days": 1
         }
         task_om = client.get(om_url, params=om_params)
@@ -191,15 +191,15 @@ async def fetch_airgradient_common(
         om_json = om_resp.json()
         hourly = om_json.get("hourly", {})
         times = hourly.get("time", [])
-        o3_vals = hourly.get("ozone", [])
+        ch4_vals = hourly.get("methane", [])
         no2_vals = hourly.get("nitrogen_dioxide", [])
         so2_vals = hourly.get("sulphur_dioxide", [])
         co_vals = hourly.get("carbon_monoxide", [])
         
         for i, t in enumerate(times):
-            for param in ["o3", "no2", "so2", "co"]:
+            for param in ["ch4", "no2", "so2", "co"]:
                 match param:
-                    case "o3": vals = o3_vals
+                    case "ch4": vals = ch4_vals
                     case "no2": vals = no2_vals
                     case "so2": vals = so2_vals
                     case "co": vals = co_vals
@@ -212,9 +212,9 @@ async def fetch_airgradient_common(
             closest_ts = min(times, key=lambda t: abs(t - now_ts))
             idx = times.index(closest_ts)
 
-            for param in ["o3", "no2", "so2", "co"]:
+            for param in ["ch4", "no2", "so2", "co"]:
                 match param:
-                    case "o3": vals = o3_vals
+                    case "ch4": vals = ch4_vals
                     case "no2": vals = no2_vals
                     case "so2": vals = so2_vals
                     case "co": vals = co_vals
@@ -259,7 +259,7 @@ async def fetch_multi_node_airgradient(
         om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
         om_params = {
             "latitude": lat, "longitude": lon,
-            "hourly": "ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
+            "hourly": "methane,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide",
             "timezone": "auto", "timeformat": "unixtime", "past_days": 1
         }
         curr_tasks.append(client.get(om_url, params=om_params))
@@ -395,15 +395,15 @@ async def fetch_multi_node_airgradient(
         om_json = om_resp.json()
         hourly = om_json.get("hourly", {})
         times = hourly.get("time", [])
-        o3_vals = hourly.get("ozone", [])
+        ch4_vals = hourly.get("methane", [])
         no2_vals = hourly.get("nitrogen_dioxide", [])
         so2_vals = hourly.get("sulphur_dioxide", [])
         co_vals = hourly.get("carbon_monoxide", [])
         
         for i, t in enumerate(times):
-            for param in ["o3", "no2", "so2", "co"]:
+            for param in ["ch4", "no2", "so2", "co"]:
                 match param:
-                    case "o3": vals = o3_vals
+                    case "ch4": vals = ch4_vals
                     case "no2": vals = no2_vals
                     case "so2": vals = so2_vals
                     case "co": vals = co_vals
@@ -416,9 +416,9 @@ async def fetch_multi_node_airgradient(
             closest_ts = min(times, key=lambda t: abs(t - now_ts))
             idx = times.index(closest_ts)
 
-            for param in ["o3", "no2", "so2", "co"]:
+            for param in ["ch4", "no2", "so2", "co"]:
                 match param:
-                    case "o3": vals = o3_vals
+                    case "ch4": vals = ch4_vals
                     case "no2": vals = no2_vals
                     case "so2": vals = so2_vals
                     case "co": vals = co_vals
@@ -445,7 +445,7 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
     params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone",
+        "hourly": "pm10,pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,methane",
         "timezone": "auto",
         "timeformat": "unixtime",
         "past_days": 1
@@ -473,7 +473,7 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
             "no2": hourly.get("nitrogen_dioxide", [])[target_idx],
             "so2": hourly.get("sulphur_dioxide", [])[target_idx],
             "co": hourly.get("carbon_monoxide", [])[target_idx],
-            "o3": hourly.get("ozone", [])[target_idx]
+            "ch4": hourly.get("methane", [])[target_idx]
         }
 
         current_comps = {k: v for k, v in current_comps.items() if v is not None}
@@ -491,7 +491,7 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
                 "no2": hourly.get("nitrogen_dioxide", [])[i],
                 "so2": hourly.get("sulphur_dioxide", [])[i],
                 "co": hourly.get("carbon_monoxide", [])[i],
-                "o3": hourly.get("ozone", [])[i]
+                "ch4": hourly.get("methane", [])[i]
             }
             hour_comps = {k: v for k, v in hour_comps.items() if v is not None}
             
