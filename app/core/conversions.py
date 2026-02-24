@@ -21,8 +21,50 @@ US_BREAKPOINTS = {
         (355, 424, 201, 300),
         (425, 504, 301, 400),
         (505, 604, 401, 500)
+    ],
+    "no2": [
+        (0, 53, 0, 50),
+        (54, 100, 51, 100),
+        (101, 360, 101, 150),
+        (361, 649, 151, 200),
+        (650, 1249, 201, 300),
+        (1250, 1649, 301, 400),
+        (1650, 2049, 401, 500)
+    ],
+    "so2": [
+        (0, 35, 0, 50),
+        (36, 75, 51, 100),
+        (76, 185, 101, 150),
+        (186, 304, 151, 200),
+        (305, 604, 201, 300),
+        (605, 804, 301, 400),
+        (805, 1004, 401, 500)
+    ],
+    "co": [
+        (0.0, 4.4, 0, 50),
+        (4.5, 9.4, 51, 100),
+        (9.5, 12.4, 101, 150),
+        (12.5, 15.4, 151, 200),
+        (15.5, 30.4, 201, 300),
+        (30.5, 40.4, 301, 400),
+        (40.5, 50.4, 401, 500)
     ]
 }
+
+_MOLAR_VOLUME = 24.45  # liters/mol at 25°C
+_MW = {
+    "no2": 46.0055,   # g/mol
+    "so2": 64.066,    # g/mol
+    "co":  28.010,    # g/mol
+}
+
+def _ugm3_to_ppb(pollutant: str, ugm3: float) -> Optional[float]:
+    if pollutant not in _MW:
+        return None
+    ppb = ugm3 * _MOLAR_VOLUME / _MW[pollutant]
+    if pollutant == "co":
+        return ppb / 1000.0  # ppb -> ppm
+    return ppb
 
 def linear_interpolate(c: float, bp: Tuple[float, float, int, int]) -> int:
     c_lo, c_hi, i_lo, i_hi = bp
@@ -36,8 +78,11 @@ def get_us_aqi(pollutant: str, conc: float) -> Optional[int]:
         return None
     
     bps = US_BREAKPOINTS[pollutant]
-    # Truncate to 1 decimal place for PM2.5 as per EPA
-    conc = math.floor(conc * 10) / 10 if pollutant == "pm2_5" else int(conc)
+    # Truncate to 1 decimal place for PM2.5 and CO as per EPA
+    if pollutant in ("pm2_5", "co"):
+        conc = math.floor(conc * 10) / 10
+    else:
+        conc = int(conc)
 
     if conc < bps[0][0]:
         return 0
@@ -110,23 +155,32 @@ def calculate_overall_aqi(pollutants_ugm3: Dict[str, float], zone_type: str = "d
             us_val = get_us_aqi(internal_key, val)
             if us_val is not None:
                 us_aqi_details[internal_key] = us_val
+        elif internal_key in ["no2", "so2", "co"]:
+            converted = _ugm3_to_ppb(internal_key, val)
+            if converted is not None:
+                us_val = get_us_aqi(internal_key, converted)
+                if us_val is not None:
+                    us_aqi_details[internal_key] = us_val
 
     overall_aqi = 0
     main_pollutant = "n/a"
     
     overall_us_aqi = 0
+    us_main_pollutant = "n/a"
     
     if aqi_details:
         main_pollutant = max(aqi_details, key=aqi_details.get)
         overall_aqi = aqi_details[main_pollutant]
         
     if us_aqi_details:
-        overall_us_aqi = max(us_aqi_details.values())
+        us_main_pollutant = max(us_aqi_details, key=us_aqi_details.get)
+        overall_us_aqi = us_aqi_details[us_main_pollutant]
 
     return {
         "aqi": overall_aqi,
         "us_aqi": overall_us_aqi,
         "main_pollutant": main_pollutant,
+        "us_main_pollutant": us_main_pollutant,
         "aqi_breakdown": aqi_details,
         "concentrations_us_units": concentrations_formatted,
         "concentrations_raw_ugm3": pollutants_ugm3,
