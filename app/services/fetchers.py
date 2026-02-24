@@ -166,10 +166,14 @@ async def fetch_airgradient_common(
         pm25 = d.get("pm02_corrected") or d.get("pm02")
         pm10 = d.get("pm10_corrected") or d.get("pm10")
         
-        current_comps["pm2_5"] = pm25
-        current_comps["pm10"] = pm10
-        current_comps["temp"] = d.get("atmp_corrected") or d.get("atmp")
-        current_comps["humidity"] = d.get("rhum_corrected") or d.get("rhum")
+        # Convert all values to float to handle AG API returning strings
+        temp_val = d.get("atmp_corrected") or d.get("atmp")
+        humid_val = d.get("rhum_corrected") or d.get("rhum")
+        
+        current_comps["pm2_5"] = float(pm25) if pm25 is not None else None
+        current_comps["pm10"] = float(pm10) if pm10 is not None else None
+        current_comps["temp"] = float(temp_val) if temp_val is not None else None
+        current_comps["humidity"] = float(humid_val) if humid_val is not None else None
 
         ag_timestamp = d.get("timestamp")
         if ag_timestamp:
@@ -306,6 +310,10 @@ async def fetch_multi_node_airgradient(
             node_statuses.append({"node": node_name, "status": "no_data"})
             continue
         
+        # Convert to float to handle AG API returning strings
+        pm25 = float(pm25)
+        pm10 = float(pm10) if pm10 is not None else None
+        
         # Check data freshness
         ag_timestamp = data.get("timestamp")
         data_age = None
@@ -323,8 +331,8 @@ async def fetch_multi_node_airgradient(
             node_statuses.append({"node": node_name, "status": "stale", "age_minutes": int(data_age/60)})
             continue
         
-        pm25_val = float(pm25)
-        pm10_val = float(pm10) if pm10 else 0.0
+        pm25_val = pm25
+        pm10_val = pm10 if pm10 else 0.0
         
         if pm25_val > 650 or pm10_val > 600:
             node_statuses.append({"node": node_name, "status": "spike_detected", "pm2_5": pm25_val, "pm10": pm10_val})
@@ -350,11 +358,15 @@ async def fetch_multi_node_airgradient(
                     _SPIKE_CACHE[node_cache_key] = current_time
                     continue
         
+        # Convert temp and humidity to float to handle AG API returning strings
+        temp_val = data.get("atmp_corrected") or data.get("atmp")
+        humid_val = data.get("rhum_corrected") or data.get("rhum")
+        
         valid_readings.append({
             "pm2_5": pm25_val,
             "pm10": pm10_val,
-            "temp": data.get("atmp_corrected") or data.get("atmp"),
-            "humidity": data.get("rhum_corrected") or data.get("rhum"),
+            "temp": float(temp_val) if temp_val is not None else None,
+            "humidity": float(humid_val) if humid_val is not None else None,
             "timestamp": reading_ts,
             "node_name": node_name
         })
