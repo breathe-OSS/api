@@ -23,30 +23,6 @@
     "lon": 74.3420,
     "zone_type": "hills"
   },
-  "bijbehara_town": {
-    "id": "bijbehara_town",
-    "name": "Bijbehara",
-    "provider": "openmeteo",
-    "lat": 33.7920,
-    "lon": 75.1022,
-    "zone_type": "hills"
-  },
-  "budgam_town": {
-    "id": "budgam_town",
-    "name": "Budgam",
-    "provider": "openmeteo",
-    "lat": 34.0150,
-    "lon": 74.7180,
-    "zone_type": "hills"
-  },
-  "chadoora_town": {
-    "id": "chadoora_town",
-    "name": "Chadoora",
-    "provider": "openmeteo",
-    "lat": 33.9540,
-    "lon": 74.7960,
-    "zone_type": "hills"
-  },
   "doda_town": {
     "id": "doda_town",
     "name": "Doda",
@@ -78,22 +54,6 @@
     "lat": 32.7169,
     "lon": 74.8609,
     "zone_type": "urban"
-  },
-  "kakapora_town": {
-    "id": "kakapora_town",
-    "name": "Kakapora",
-    "provider": "openmeteo",
-    "lat": 33.9805,
-    "lon": 74.9313,
-    "zone_type": "hills"
-  },
-  "kangan_town": {
-    "id": "kangan_town",
-    "name": "Kangan",
-    "provider": "openmeteo",
-    "lat": 34.2630,
-    "lon": 74.9030,
-    "zone_type": "hills"
   },
   "kargil_town": {
     "id": "kargil_town",
@@ -151,36 +111,12 @@
     "lon": 77.5771,
     "zone_type": "urban"
   },
-  "magam_town": {
-    "id": "magam_town",
-    "name": "Magam",
-    "provider": "openmeteo",
-    "lat": 34.0832,
-    "lon": 74.5578,
-    "zone_type": "hills"
-  },
-  "mattan_town": {
-    "id": "mattan_town",
-    "name": "Mattan",
-    "provider": "openmeteo",
-    "lat": 33.7355,
-    "lon": 75.2214,
-    "zone_type": "hills"
-  },
   "pahalgam_town": {
     "id": "pahalgam_town",
     "name": "Pahalgam",
     "provider": "openmeteo",
     "lat": 34.0161,
     "lon": 75.3150,
-    "zone_type": "hills"
-  },
-  "pattan_town": {
-    "id": "pattan_town",
-    "name": "Pattan",
-    "provider": "openmeteo",
-    "lat": 34.1548,
-    "lon": 74.5560,
     "zone_type": "hills"
   },
   "poonch_town": {
@@ -197,14 +133,6 @@
     "provider": "openmeteo",
     "lat": 33.8740,
     "lon": 74.8990,
-    "zone_type": "hills"
-  },
-  "qazigund_town": {
-    "id": "qazigund_town",
-    "name": "Qazigund",
-    "provider": "openmeteo",
-    "lat": 33.5939,
-    "lon": 75.1643,
     "zone_type": "hills"
   },
   "rajouri_town": {
@@ -247,14 +175,6 @@
     "lon": 74.8300,
     "zone_type": "hills"
   },
-  "sogam_lolab": {
-    "id": "sogam_lolab",
-    "name": "Sogam (Lolab)",
-    "provider": "openmeteo",
-    "lat": 34.4870,
-    "lon": 74.3760,
-    "zone_type": "hills"
-  },
   "sopore_town": {
     "id": "sopore_town",
     "name": "Sopore",
@@ -271,22 +191,6 @@
     "lon": 74.8122,
     "zone_type": "urban"
   },
-  "sumbal_town": {
-    "id": "sumbal_town",
-    "name": "Sumbal",
-    "provider": "openmeteo",
-    "lat": 34.3007,
-    "lon": 74.7063,
-    "zone_type": "hills"
-  },
-  "tral_town": {
-    "id": "tral_town",
-    "name": "Tral",
-    "provider": "openmeteo",
-    "lat": 33.9278,
-    "lon": 75.0941,
-    "zone_type": "hills"
-  },
   "udhampur_city": {
     "id": "udhampur_city",
     "name": "Udhampur",
@@ -294,13 +198,5 @@
     "lat": 32.9160,
     "lon": 75.1416,
     "zone_type": "urban"
-  },
-  "zainapora_town": {
-    "id": "zainapora_town",
-    "name": "Zainapora",
-    "provider": "openmeteo",
-    "lat": 33.7420,
-    "lon": 74.8900,
-    "zone_type": "hills"
   }
 }
