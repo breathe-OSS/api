@@ -28,5 +28,6 @@ JAMMU_AIRGRADIENT_NODES = [
 ]
 
 RAJOURI_AIRGRADIENT_CONFIG = {
-    "location_id": 184149
+    "location_id": 184149,
+    "name": "Rajouri"
 }
