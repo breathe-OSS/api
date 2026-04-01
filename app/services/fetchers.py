@@ -545,6 +545,10 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
                 nodes = [RAJOURI_AIRGRADIENT_CONFIG]  
                 token = jammu_airgradient_token
             
+            nodes = [n for n in nodes if n.get("enabled", True)]
+            if not nodes:
+                raise ValueError(f"All nodes for {zone_id} are disabled")
+            
             try:
                 if len(nodes) > 1:
                     fetched_data = await fetch_multi_node_airgradient(
