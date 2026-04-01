@@ -20,7 +20,7 @@
         {
             "location_id": 184303,
             "name": "Gandhi Nagar",
-            "enabled": false
+            "enabled": true
         }
     ],
     "RAJOURI_AIRGRADIENT_CONFIG": {
