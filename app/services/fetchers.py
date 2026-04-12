@@ -117,6 +117,8 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             if hour_ts not in history_buckets: history_buckets[hour_ts] = {}
             history_buckets[hour_ts]["pm2_5"] = pt["pm2_5"]
             history_buckets[hour_ts]["pm10"] = pt["pm10"]
+            if "temp" in pt: history_buckets[hour_ts]["temp"] = pt["temp"]
+            if "humidity" in pt: history_buckets[hour_ts]["humidity"] = pt["humidity"]
 
     sorted_times = sorted(history_buckets.keys())
     now_ts = datetime.now().timestamp()
@@ -143,7 +145,11 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             final_history.append({
                 "ts": int(ts),
                 "aqi": aqi_res["aqi"],
-                "us_aqi": aqi_res.get("us_aqi", 0)
+                "us_aqi": aqi_res.get("us_aqi", 0),
+                "pm2_5": hour_comps.get("pm2_5"),
+                "pm10": hour_comps.get("pm10"),
+                "temp": hour_comps.get("temp"),
+                "humidity": hour_comps.get("humidity")
             })
         except:
             continue
@@ -210,7 +216,13 @@ async def fetch_airgradient_common(
         
         # Save reading to DB
         if pm25 is not None:
-            database.save_reading(zone_id, float(pm25), float(pm10) if pm10 else 0.0)
+            database.save_reading(
+                zone_id, 
+                float(pm25), 
+                float(pm10) if pm10 else 0.0,
+                temp=float(temp_val) if temp_val is not None else None,
+                humidity=float(humid_val) if humid_val is not None else None
+            )
     else:
         print(f"AG Live Fetch Failed for {zone_id}: {ag_resp.status_code}")
 
@@ -396,7 +408,14 @@ async def fetch_multi_node_airgradient(
         })
         node_statuses.append({"node": node_name, "status": "active"})
         
-        database.save_reading(f"{zone_id}_{node_name}", pm25_val, pm10_val, timestamp=reading_ts)
+        database.save_reading(
+            f"{zone_id}_{node_name}", 
+            pm25_val, 
+            pm10_val, 
+            temp=float(temp_val) if temp_val is not None else None,
+            humidity=float(humid_val) if humid_val is not None else None,
+            timestamp=reading_ts
+        )
     
     if not valid_readings:
         raise ValueError(f"All {len(nodes)} sensor nodes offline or showing spikes")
@@ -407,6 +426,9 @@ async def fetch_multi_node_airgradient(
     
     temp_readings = [r["temp"] for r in valid_readings if r["temp"] is not None]
     humidity_readings = [r["humidity"] for r in valid_readings if r["humidity"] is not None]
+    
+    merged_temp = sum(temp_readings) / len(temp_readings) if temp_readings else None
+    merged_humid = sum(humidity_readings) / len(humidity_readings) if humidity_readings else None
     
     current_comps = {
         "pm2_5": merged_pm25,
@@ -422,7 +444,7 @@ async def fetch_multi_node_airgradient(
     if spike_warnings:
         current_comps["_spike_warning"] = f"Data from {len(valid_readings)} of {len(nodes)} sensors. " + "; ".join(spike_warnings)
     
-    database.save_reading(zone_id, merged_pm25, merged_pm10)
+    database.save_reading(zone_id, merged_pm25, merged_pm10, temp=merged_temp, humidity=merged_humid)
     
     om_points = []
     if isinstance(om_resp, Exception) or om_resp.status_code != 200:

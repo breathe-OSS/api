@@ -54,9 +54,17 @@ def init_db():
                 timestamp REAL NOT NULL,
                 pm2_5 REAL,
                 pm10 REAL,
+                temp REAL,
+                humidity REAL,
                 UNIQUE(zone_id, timestamp)
             )
         ''')
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='sensor_readings'")
+        columns = [row['column_name'] for row in c.fetchall()]
+        if 'temp' not in columns:
+            c.execute('ALTER TABLE sensor_readings ADD COLUMN temp REAL')
+        if 'humidity' not in columns:
+            c.execute('ALTER TABLE sensor_readings ADD COLUMN humidity REAL')
     else:
         c.execute('''
             CREATE TABLE IF NOT EXISTS sensor_readings (
@@ -65,15 +73,23 @@ def init_db():
                 timestamp REAL NOT NULL,
                 pm2_5 REAL,
                 pm10 REAL,
+                temp REAL,
+                humidity REAL,
                 UNIQUE(zone_id, timestamp)
             )
         ''')
+        c.execute("PRAGMA table_info(sensor_readings)")
+        columns = [row[1] for row in c.fetchall()]
+        if 'temp' not in columns:
+            c.execute('ALTER TABLE sensor_readings ADD COLUMN temp REAL')
+        if 'humidity' not in columns:
+            c.execute('ALTER TABLE sensor_readings ADD COLUMN humidity REAL')
     
     c.execute('CREATE INDEX IF NOT EXISTS idx_zone_time ON sensor_readings (zone_id, timestamp)')
     conn.commit()
     conn.close()
 
-def save_reading(zone_id, pm25, pm10, timestamp=None):
+def save_reading(zone_id, pm25, pm10, temp=None, humidity=None, timestamp=None):
     if timestamp is None:
         timestamp = time.time()
         
@@ -84,15 +100,15 @@ def save_reading(zone_id, pm25, pm10, timestamp=None):
     try:
         if is_pg:
             c.execute('''
-                INSERT INTO sensor_readings (zone_id, timestamp, pm2_5, pm10)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO sensor_readings (zone_id, timestamp, pm2_5, pm10, temp, humidity)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (zone_id, timestamp) DO NOTHING
-            ''', (zone_id, timestamp, pm25, pm10))
+            ''', (zone_id, timestamp, pm25, pm10, temp, humidity))
         else:
             c.execute('''
-                INSERT OR IGNORE INTO sensor_readings (zone_id, timestamp, pm2_5, pm10)
-                VALUES (?, ?, ?, ?)
-            ''', (zone_id, timestamp, pm25, pm10))
+                INSERT OR IGNORE INTO sensor_readings (zone_id, timestamp, pm2_5, pm10, temp, humidity)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (zone_id, timestamp, pm25, pm10, temp, humidity))
             
         conn.commit()
     except Exception as e:
@@ -108,12 +124,12 @@ def get_history(zone_id, hours=24):
     cutoff = time.time() - (hours * 3600)
     
     query = '''
-        SELECT timestamp as ts, pm2_5, pm10 
+        SELECT timestamp as ts, pm2_5, pm10, temp, humidity
         FROM sensor_readings 
         WHERE zone_id = %s AND timestamp > %s
         ORDER BY timestamp ASC
     ''' if is_pg else '''
-        SELECT timestamp as ts, pm2_5, pm10 
+        SELECT timestamp as ts, pm2_5, pm10, temp, humidity
         FROM sensor_readings 
         WHERE zone_id = ? AND timestamp > ?
         ORDER BY timestamp ASC
