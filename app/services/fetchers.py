@@ -435,6 +435,15 @@ async def fetch_multi_node_airgradient(
         "pm10": merged_pm10,
         "temp": sum(temp_readings) / len(temp_readings) if temp_readings else None,
         "humidity": sum(humidity_readings) / len(humidity_readings) if humidity_readings else None,
+        "nodes": {
+            r["node_name"]: {
+                "pm2_5": r["pm2_5"],
+                "pm10": r["pm10"],
+                "temp": r["temp"],
+                "humidity": r["humidity"]
+            }
+            for r in valid_readings
+        },
         "_ag_timestamp": max(r["timestamp"] for r in valid_readings),
         "_node_count": len(valid_readings),
         "_total_nodes": len(nodes),
@@ -692,7 +701,8 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             "timestamp_unix": current_time,
             "coordinates": {"lat": lat, "lon": lon},
             "history": history,
-            "warning": warning_msg, 
+            "warning": warning_msg,
+            "nodes": raw_comps.get("nodes"),
             **aqi_data
         }
 
