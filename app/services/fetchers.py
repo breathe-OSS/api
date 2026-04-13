@@ -747,24 +747,27 @@ async def start_background_loop():
 async def update_all_zones_background():
     print(f"--- Updating Zones at {datetime.now()} ---")
     
-    tasks = []
-    for zone_id, z in ZONES.items():
-        tasks.append(get_zone_data(
-            z["id"], 
-            z["name"], 
-            z["lat"], 
-            z["lon"], 
-            z.get("zone_type", "hills"),
-            force_refresh=True 
-        ))
+    # Use a semaphore to limit concurrency to avoid rate limiting from APIs like Open-Meteo
+    semaphore = asyncio.Semaphore(5)
+
+    async def throttled_update(z):
+        async with semaphore:
+            try:
+                await get_zone_data(
+                    z["id"], 
+                    z["name"], 
+                    z["lat"], 
+                    z["lon"], 
+                    z.get("zone_type", "hills"),
+                    force_refresh=True 
+                )
+                return True
+            except Exception as e:
+                print(f"Failed to update {z['id']}: {e}")
+                return False
+
+    tasks = [throttled_update(z) for z in ZONES.values()]
+    results = await asyncio.gather(*tasks)
     
-    # Run all updates in parallel
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for zone_id, res in zip(ZONES.keys(), results):
-        if isinstance(res, Exception):
-            print(f"Failed to update {zone_id}: {res}")
-        else:
-            print(f"Updated: {zone_id}")
-            
-    print("--- Update Cycle Complete ---")
+    success_count = sum(1 for r in results if r)
+    print(f"--- Update Cycle Complete ({success_count}/{len(ZONES)} zones updated) ---")
