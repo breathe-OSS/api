@@ -116,7 +116,7 @@ def save_reading(zone_id, pm25, pm10, temp=None, humidity=None, timestamp=None):
     finally:
         conn.close()
 
-def save_readings(readings: List[Dict]):
+def save_readings(readings: list[dict]):
     """Batch save multiple readings in a single transaction."""
     if not readings:
         return
