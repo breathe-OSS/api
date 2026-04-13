@@ -116,6 +116,40 @@ def save_reading(zone_id, pm25, pm10, temp=None, humidity=None, timestamp=None):
     finally:
         conn.close()
 
+def save_readings(readings: List[Dict]):
+    """Batch save multiple readings in a single transaction."""
+    if not readings:
+        return
+
+    conn = get_connection()
+    c = conn.cursor()
+    is_pg = hasattr(conn, 'dsn')
+
+    try:
+        if is_pg:
+            c.executemany('''
+                INSERT INTO sensor_readings (zone_id, timestamp, pm2_5, pm10, temp, humidity)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (zone_id, timestamp) DO NOTHING
+            ''', [
+                (r["zone_id"], r["timestamp"], r["pm2_5"], r["pm10"], r.get("temp"), r.get("humidity"))
+                for r in readings
+            ])
+        else:
+            c.executemany('''
+                INSERT OR IGNORE INTO sensor_readings (zone_id, timestamp, pm2_5, pm10, temp, humidity)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', [
+                (r["zone_id"], r["timestamp"], r["pm2_5"], r["pm10"], r.get("temp"), r.get("humidity"))
+                for r in readings
+            ])
+            
+        conn.commit()
+    except Exception as e:
+        print(f"DB Batch Save Error: {e}")
+    finally:
+        conn.close()
+
 def get_history(zone_id, hours=24):
     conn = get_connection()
     c = conn.cursor()

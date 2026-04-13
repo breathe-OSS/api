@@ -81,11 +81,16 @@ async def ensure_history_exists(zone_id: str, loc_id: int, token: str):
         print(f" DB empty for {zone_id}. Refilling from AirGradient API...")
         async with httpx.AsyncClient() as client:
             history = await fetch_airgradient_history(client, loc_id, token)
-            count = 0
+            readings = []
             for pt in history:
-                database.save_reading(zone_id, pt["pm2_5"], pt["pm10"], timestamp=pt["ts"])
-                count += 1
-            print(f" Refilled {count} records for {zone_id}")
+                readings.append({
+                    "zone_id": zone_id,
+                    "pm2_5": pt["pm2_5"],
+                    "pm10": pt["pm10"],
+                    "timestamp": pt["ts"]
+                })
+            database.save_readings(readings)
+            print(f" Refilled {len(readings)} records for {zone_id}")
 
 def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     local_data = database.get_history(zone_id, hours=24)
@@ -205,24 +210,27 @@ async def fetch_airgradient_common(
         current_comps["temp"] = float(temp_val) if temp_val is not None else None
         current_comps["humidity"] = float(humid_val) if humid_val is not None else None
 
-        ag_timestamp = d.get("timestamp")
-        if ag_timestamp:
+        ag_timestamp_raw = d.get("timestamp")
+        reading_ts = datetime.now().timestamp()
+        if ag_timestamp_raw:
             # API returns ISO format
             try:
-                dt = datetime.fromisoformat(ag_timestamp.replace("Z", "+00:00"))
-                current_comps["_ag_timestamp"] = dt.timestamp()
+                dt = datetime.fromisoformat(ag_timestamp_raw.replace("Z", "+00:00"))
+                reading_ts = dt.timestamp()
+                current_comps["_ag_timestamp"] = reading_ts
             except:
                 pass
         
         # Save reading to DB
         if pm25 is not None:
-            database.save_reading(
-                zone_id, 
-                float(pm25), 
-                float(pm10) if pm10 else 0.0,
-                temp=float(temp_val) if temp_val is not None else None,
-                humidity=float(humid_val) if humid_val is not None else None
-            )
+            database.save_readings([{
+                "zone_id": zone_id, 
+                "pm2_5": float(pm25), 
+                "pm10": float(pm10) if pm10 else 0.0,
+                "temp": float(temp_val) if temp_val is not None else None,
+                "humidity": float(humid_val) if humid_val is not None else None,
+                "timestamp": reading_ts
+            }])
     else:
         print(f"AG Live Fetch Failed for {zone_id}: {ag_resp.status_code}")
 
@@ -407,18 +415,22 @@ async def fetch_multi_node_airgradient(
             "node_name": node_name
         })
         node_statuses.append({"node": node_name, "status": "active"})
-        
-        database.save_reading(
-            f"{zone_id}_{node_name}", 
-            pm25_val, 
-            pm10_val, 
-            temp=float(temp_val) if temp_val is not None else None,
-            humidity=float(humid_val) if humid_val is not None else None,
-            timestamp=reading_ts
-        )
     
     if not valid_readings:
         raise ValueError(f"All {len(nodes)} sensor nodes offline or showing spikes")
+
+    # Save all valid node readings to DB in batch
+    node_readings = []
+    for r in valid_readings:
+        node_readings.append({
+            "zone_id": f"{zone_id}_{r['node_name']}",
+            "pm2_5": r["pm2_5"],
+            "pm10": r["pm10"],
+            "temp": r["temp"],
+            "humidity": r["humidity"],
+            "timestamp": r["timestamp"]
+        })
+    database.save_readings(node_readings)
     
     # Average the valid readings
     merged_pm25 = sum(r["pm2_5"] for r in valid_readings) / len(valid_readings)
@@ -453,7 +465,14 @@ async def fetch_multi_node_airgradient(
     if spike_warnings:
         current_comps["_spike_warning"] = f"Data from {len(valid_readings)} of {len(nodes)} sensors. " + "; ".join(spike_warnings)
     
-    database.save_reading(zone_id, merged_pm25, merged_pm10, temp=merged_temp, humidity=merged_humid)
+    database.save_readings([{
+        "zone_id": zone_id,
+        "pm2_5": merged_pm25,
+        "pm10": merged_pm10,
+        "temp": merged_temp,
+        "humidity": merged_humid,
+        "timestamp": current_time
+    }])
     
     om_points = []
     if isinstance(om_resp, Exception) or om_resp.status_code != 200:
@@ -727,18 +746,25 @@ async def start_background_loop():
 
 async def update_all_zones_background():
     print(f"--- Updating Zones at {datetime.now()} ---")
+    
+    tasks = []
     for zone_id, z in ZONES.items():
-        try:
-            await get_zone_data(
-                z["id"], 
-                z["name"], 
-                z["lat"], 
-                z["lon"], 
-                z.get("zone_type", "hills"),
-                force_refresh=True 
-            )
+        tasks.append(get_zone_data(
+            z["id"], 
+            z["name"], 
+            z["lat"], 
+            z["lon"], 
+            z.get("zone_type", "hills"),
+            force_refresh=True 
+        ))
+    
+    # Run all updates in parallel
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    for zone_id, res in zip(ZONES.keys(), results):
+        if isinstance(res, Exception):
+            print(f"Failed to update {zone_id}: {res}")
+        else:
             print(f"Updated: {zone_id}")
-            await asyncio.sleep(1) 
-        except Exception as e:
-            print(f"Failed to update {zone_id}: {e}")
+            
     print("--- Update Cycle Complete ---")
