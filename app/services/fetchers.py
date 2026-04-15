@@ -161,6 +161,26 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             
     return final_history
 
+def _downsample_to_hourly(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not data:
+        return []
+    
+    buckets = {}
+    for pt in data:
+        dt = datetime.fromtimestamp(pt["ts"])
+        hour_ts = int(dt.replace(minute=0, second=0, microsecond=0).timestamp())
+        
+        buckets[hour_ts] = {
+            "ts": hour_ts,
+            "pm2_5": pt["pm2_5"],
+            "pm10": pt["pm10"],
+            "temp": pt.get("temp"),
+            "humidity": pt.get("humidity")
+        }
+    
+    sorted_times = sorted(buckets.keys())
+    return [buckets[ts] for ts in sorted_times]
+
 async def fetch_airgradient_common(
     zone_id: str,
     loc_id: int,
@@ -414,7 +434,7 @@ async def fetch_multi_node_airgradient(
             "humidity": float(humid_val) if humid_val is not None else None,
             "timestamp": reading_ts,
             "node_name": node_name,
-            "history": node_history_24h
+            "history": _downsample_to_hourly(node_history_24h)
         })
         node_statuses.append({"node": node_name, "status": "active"})
     
