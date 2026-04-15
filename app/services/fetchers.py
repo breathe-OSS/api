@@ -385,11 +385,12 @@ async def fetch_multi_node_airgradient(
             continue
         
         node_zone_id = f"{zone_id}_{node_name}"
-        node_history = database.get_history(node_zone_id, hours=2)
+        node_history_24h = database.get_history(node_zone_id, hours=24)
         
-        if node_history:
+        if node_history_24h:
             target_ts = reading_ts - 3600
-            closest_reading = min(node_history, key=lambda h: abs(h["ts"] - target_ts))
+            # Reuse 24h history for spike detection
+            closest_reading = min(node_history_24h, key=lambda h: abs(h["ts"] - target_ts))
             
             time_diff = abs(closest_reading["ts"] - target_ts)
             if time_diff < 5400:
@@ -412,7 +413,8 @@ async def fetch_multi_node_airgradient(
             "temp": float(temp_val) if temp_val is not None else None,
             "humidity": float(humid_val) if humid_val is not None else None,
             "timestamp": reading_ts,
-            "node_name": node_name
+            "node_name": node_name,
+            "history": node_history_24h
         })
         node_statuses.append({"node": node_name, "status": "active"})
     
@@ -452,7 +454,8 @@ async def fetch_multi_node_airgradient(
                 "pm2_5": r["pm2_5"],
                 "pm10": r["pm10"],
                 "temp": r["temp"],
-                "humidity": r["humidity"]
+                "humidity": r["humidity"],
+                "history": r["history"]
             }
             for r in valid_readings
         },
