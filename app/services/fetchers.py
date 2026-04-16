@@ -161,7 +161,7 @@ def _get_merged_history(zone_id: str, om_points: List[Dict[str, Any]]) -> List[D
             
     return final_history
 
-def _downsample_to_hourly(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _downsample_to_hourly(data: List[Dict[str, Any]], zone_type: str = "urban") -> List[Dict[str, Any]]:
     if not data:
         return []
     
@@ -170,13 +170,28 @@ def _downsample_to_hourly(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         dt = datetime.fromtimestamp(pt["ts"])
         hour_ts = int(dt.replace(minute=0, second=0, microsecond=0).timestamp())
         
-        buckets[hour_ts] = {
-            "ts": hour_ts,
+        hour_comps = {
             "pm2_5": pt["pm2_5"],
             "pm10": pt["pm10"],
             "temp": pt.get("temp"),
             "humidity": pt.get("humidity")
         }
+
+        try:
+            aqi_res = calculate_overall_aqi(hour_comps, zone_type=zone_type)
+            buckets[hour_ts] = {
+                "ts": hour_ts,
+                **hour_comps,
+                "aqi": aqi_res["aqi"],
+                "us_aqi": aqi_res.get("us_aqi", 0)
+            }
+        except:
+            buckets[hour_ts] = {
+                "ts": hour_ts,
+                **hour_comps,
+                "aqi": 0,
+                "us_aqi": 0
+            }
     
     sorted_times = sorted(buckets.keys())
     return [buckets[ts] for ts in sorted_times]
@@ -427,14 +442,18 @@ async def fetch_multi_node_airgradient(
         temp_val = data.get("atmp_corrected") or data.get("atmp")
         humid_val = data.get("rhum_corrected") or data.get("rhum")
         
-        valid_readings.append({
+        node_comps = {
             "pm2_5": pm25_val,
             "pm10": pm10_val,
             "temp": float(temp_val) if temp_val is not None else None,
-            "humidity": float(humid_val) if humid_val is not None else None,
+            "humidity": float(humid_val) if humid_val is not None else None
+        }
+
+        valid_readings.append({
+            **node_comps,
             "timestamp": reading_ts,
             "node_name": node_name,
-            "history": _downsample_to_hourly(node_history_24h)
+            "history": _downsample_to_hourly(node_history_24h, zone_type=zone_type)
         })
         node_statuses.append({"node": node_name, "status": "active"})
     
@@ -463,44 +482,10 @@ async def fetch_multi_node_airgradient(
     
     merged_temp = sum(temp_readings) / len(temp_readings) if temp_readings else None
     merged_humid = sum(humidity_readings) / len(humidity_readings) if humidity_readings else None
-    
-    current_comps = {
-        "pm2_5": merged_pm25,
-        "pm10": merged_pm10,
-        "temp": sum(temp_readings) / len(temp_readings) if temp_readings else None,
-        "humidity": sum(humidity_readings) / len(humidity_readings) if humidity_readings else None,
-        "nodes": {
-            r["node_name"]: {
-                "pm2_5": r["pm2_5"],
-                "pm10": r["pm10"],
-                "temp": r["temp"],
-                "humidity": r["humidity"],
-                "history": r["history"]
-            }
-            for r in valid_readings
-        },
-        "_ag_timestamp": max(r["timestamp"] for r in valid_readings),
-        "_node_count": len(valid_readings),
-        "_total_nodes": len(nodes),
-        "_node_statuses": node_statuses
-    }
-    
-    if spike_warnings:
-        current_comps["_spike_warning"] = f"Data from {len(valid_readings)} of {len(nodes)} sensors. " + "; ".join(spike_warnings)
-    
-    database.save_readings([{
-        "zone_id": zone_id,
-        "pm2_5": merged_pm25,
-        "pm10": merged_pm10,
-        "temp": merged_temp,
-        "humidity": merged_humid,
-        "timestamp": current_time
-    }])
-    
+
     om_points = []
-    if isinstance(om_resp, Exception) or om_resp.status_code != 200:
-        print(f"OM request failed for {zone_id}")
-    else:
+    current_gas_comps = {}
+    if not isinstance(om_resp, Exception) and om_resp.status_code == 200:
         om_json = om_resp.json()
         hourly = om_json.get("hourly", {})
         times = hourly.get("time", [])
@@ -540,7 +525,43 @@ async def fetch_multi_node_airgradient(
                         found_val = vals[check_idx]
                         break
                 if found_val is not None:
-                    current_comps[param] = found_val
+                    current_gas_comps[param] = found_val
+
+    current_comps = {
+        "pm2_5": merged_pm25,
+        "pm10": merged_pm10,
+        "temp": merged_temp,
+        "humidity": merged_humid,
+        **current_gas_comps,
+        "nodes": {
+            r["node_name"]: {
+                "pm2_5": r["pm2_5"],
+                "pm10": r["pm10"],
+                "temp": r["temp"],
+                "humidity": r["humidity"],
+                "aqi": calculate_overall_aqi({**r, **current_gas_comps}, zone_type=zone_type)["aqi"],
+                "us_aqi": calculate_overall_aqi({**r, **current_gas_comps}, zone_type=zone_type).get("us_aqi", 0),
+                "history": r["history"]
+            }
+            for r in valid_readings
+        },
+        "_ag_timestamp": max(r["timestamp"] for r in valid_readings),
+        "_node_count": len(valid_readings),
+        "_total_nodes": len(nodes),
+        "_node_statuses": node_statuses
+    }
+    
+    if spike_warnings:
+        current_comps["_spike_warning"] = f"Data from {len(valid_readings)} of {len(nodes)} sensors. " + "; ".join(spike_warnings)
+    
+    database.save_readings([{
+        "zone_id": zone_id,
+        "pm2_5": merged_pm25,
+        "pm10": merged_pm10,
+        "temp": merged_temp,
+        "humidity": merged_humid,
+        "timestamp": current_time
+    }])
     
     history = _get_merged_history(zone_id, om_points)
     
