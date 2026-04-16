@@ -207,6 +207,5 @@ def calculate_overall_aqi(pollutants_ugm3: Dict[str, float], zone_type: str = "d
         "us_main_pollutant": us_main_pollutant,
         "aqi_breakdown": aqi_details,
         "concentrations_us_units": concentrations_formatted,
-        "concentrations_raw_ugm3": pollutants_ugm3,
         "zone_applied": zone_type
     }
