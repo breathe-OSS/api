@@ -58,6 +58,7 @@ api/
     │   ├── __init__.py
     │   ├── zones.json
     │   ├── nodes.json          # AirGradient node configurations
+    │   ├── sensor_info.json    # Hardware sensor metadata
     │   └── aqi_breakpoints.json
     └── services/               # Data fetching & processing
         ├── __init__.py
@@ -84,6 +85,8 @@ api/
   Contains zone definitions including names, coordinates, and `zone_type` (`hills`, `urban`, `industrial`) for customized AQI calculation.
 - `app/data/nodes.json`
   Maps specific physical sensor locations (`location_id`) to city-level zones.
+- `app/data/sensor_info.json`
+  Stores hardware-specific metadata for ground sensors (model, coordinates, installation dates).
 - `app/data/aqi_breakpoints.json`
   Official Indian AQI breakpoint tables.
 
@@ -115,6 +118,9 @@ From the `api` directory:
 
 - **List All Zones**:
   `GET /zones`
+
+- **Hardware Sensor Metadata**:
+  `GET /sensor-info`
 
 ## Development
 The project is designed to be data-driven. Adding a new town or district does not require changing Python code; you simply add a new entry to `zones.json`. Similarly, if government standards change, updating `aqi_breakpoints.json` will instantly update the calculation logic across the entire application.

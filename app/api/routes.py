@@ -25,7 +25,7 @@
 from fastapi import FastAPI, HTTPException
 from typing import Callable, Any, Dict
 
-from app.core.config import ZONES
+from app.core.config import ZONES, SENSOR_INFO
 from app.services.fetchers import get_zone_data
 
 def register_zone_routes(app: FastAPI) -> None:
@@ -77,3 +77,7 @@ def register_zone_routes(app: FastAPI) -> None:
                 for z in ZONES.values()
             ]
         }
+
+    @app.get("/sensor-info")
+    async def get_sensors() -> dict:
+        return SENSOR_INFO

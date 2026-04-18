@@ -1,0 +1,59 @@
+{
+  "sensors": [
+    {
+      "name": "Kanipora",
+      "zone": "Srinagar",
+      "location_id": 172681,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": false,
+      "latitude": 34.0132271,
+      "longitude": 74.8398961,
+      "installation_date": "Oct 4, 2025"
+    },
+    {
+      "name": "Bemina",
+      "zone": "Srinagar",
+      "location_id": 170398,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": false,
+      "latitude": 34.07023554237501,
+      "longitude": 74.77548492160591,
+      "installation_date": "May 24, 2025"
+    },
+    {
+      "name": "Talab Tillo",
+      "zone": "Jammu",
+      "location_id": 182171,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": true,
+      "latitude": 32.740106329099916,
+      "longitude": 74.83177768465765,
+      "installation_date": "Jan 16, 2026"
+    },
+    {
+      "name": "Gandhi Nagar",
+      "zone": "Jammu",
+      "location_id": 184303,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": true,
+      "latitude": 32.701576,
+      "longitude": 74.859108,
+      "installation_date": "Feb 7, 2026"
+    },
+    {
+      "name": "Rajouri",
+      "zone": "Rajouri",
+      "location_id": 184149,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": true,
+      "latitude": 33.380775,
+      "longitude": 74.314353,
+      "installation_date": "Feb 5, 2026"
+    }
+  ]
+}

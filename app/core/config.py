@@ -42,6 +42,7 @@ airgradient_token = os.getenv("AIRGRADIENT_TOKEN")
 jammu_airgradient_token = os.getenv("JAMMU_AIRGRADIENT_TOKEN") # this is currently being used for jammu and rajouri, and will probably will also be used for future sensors
 
 _nodes_config = _load_json("nodes.json")
+SENSOR_INFO = _load_json("sensor_info.json")
 
 SRINAGAR_AIRGRADIENT_NODES = _nodes_config.get("SRINAGAR_AIRGRADIENT_NODES", [])
 JAMMU_AIRGRADIENT_NODES = _nodes_config.get("JAMMU_AIRGRADIENT_NODES", [])
