@@ -640,6 +640,44 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
             "history": history
         }
 
+def _calculate_24h_averages(history: List[Dict[str, Any]], zone_type: str = "urban") -> Dict[str, Any]:
+    if not history:
+        return {}
+    
+    metrics = {"pm2_5": [], "pm10": [], "temp": [], "humidity": [], "aqi": [], "us_aqi": []}
+    
+    for pt in history:
+        for k in metrics.keys():
+            if k in pt and pt[k] is not None:
+                metrics[k].append(pt[k])
+                
+    averages = {}
+    
+    for k, vals in metrics.items():
+        if vals:
+            avg = sum(vals) / len(vals)
+            if k in ("aqi", "us_aqi"):
+                averages[k] = int(round(avg))
+            else:
+                averages[k] = round(avg, 1)
+                
+    if "pm2_5" in averages or "pm10" in averages:
+        aqi_comps = {
+            "pm2_5": averages.get("pm2_5"),
+            "pm10": averages.get("pm10")
+        }
+        aqi_comps = {k: v for k, v in aqi_comps.items() if v is not None}
+        if aqi_comps:
+            try:
+                aqi_res = calculate_overall_aqi(aqi_comps, zone_type=zone_type)
+                averages["aqi"] = aqi_res.get("aqi", averages.get("aqi", 0))
+                if "us_aqi" in aqi_res:
+                    averages["us_aqi"] = aqi_res["us_aqi"]
+            except Exception:
+                pass
+
+    return averages
+
 async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zone_type: str, force_refresh: bool = False):
     cached_data = _RAM_CACHE.get(zone_id)
     current_time = datetime.now().timestamp()
@@ -757,12 +795,15 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             else:
                 warning_msg = sensor_offline_warning
 
+        averages_24h = _calculate_24h_averages(history, zone_type)
+
         full_payload = {
             "zone_id": zone_id,
             "zone_name": zone_name,
             "source": source_name,
             "timestamp_unix": current_time,
             "coordinates": {"lat": lat, "lon": lon},
+            "averages_24h": averages_24h,
             "history": history,
             "warning": warning_msg,
             "nodes": raw_comps.get("nodes"),
