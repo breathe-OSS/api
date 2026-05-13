@@ -202,7 +202,8 @@ async def fetch_airgradient_common(
     token: str,
     lat: float,
     lon: float,
-    zone_type: str = "urban"
+    zone_type: str = "urban",
+    node_name: str = "Node 1"
 ) -> Dict[str, Any]:
     """
     Common fetcher for any AirGradient zone.
@@ -313,6 +314,35 @@ async def fetch_airgradient_common(
                     current_comps[param] = found_val
 
     history = _get_merged_history(zone_id, om_points)
+
+    node_history_24h = database.get_history(zone_id, hours=24)
+    downsampled_history = _downsample_to_hourly(node_history_24h, zone_type=zone_type)
+
+    if current_comps.get("pm2_5") is not None:
+        try:
+            aqi_data = calculate_overall_aqi(current_comps, zone_type=zone_type)
+        except:
+            aqi_data = {"aqi": 0, "us_aqi": 0}
+
+        current_comps["nodes"] = {
+            node_name: {
+                "pm2_5": current_comps.get("pm2_5"),
+                "pm10": current_comps.get("pm10", 0.0),
+                "temp": current_comps.get("temp"),
+                "humidity": current_comps.get("humidity"),
+                "aqi": aqi_data.get("aqi", 0),
+                "us_aqi": aqi_data.get("us_aqi", 0),
+                "history": downsampled_history
+            }
+        }
+        current_comps["_node_count"] = 1
+        current_comps["_total_nodes"] = 1
+        current_comps["_node_statuses"] = [{"node": node_name, "status": "active"}]
+    else:
+        current_comps["nodes"] = {}
+        current_comps["_node_count"] = 0
+        current_comps["_total_nodes"] = 1
+        current_comps["_node_statuses"] = [{"node": node_name, "status": "offline"}]
 
     return {
         "current_comps": current_comps,
@@ -727,7 +757,8 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
                         token=token,
                         lat=lat,
                         lon=lon,
-                        zone_type=zone_type
+                        zone_type=zone_type,
+                        node_name=config.get("name", "Node 1")
                     )
                     source_name = "airgradient + openmeteo"
                 
