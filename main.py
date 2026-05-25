@@ -39,6 +39,12 @@ async def periodic_updates():
     while True:
         try:
             await update_all_zones_background()
+            
+            # Now that raw data is updated, trigger the continuous aggregation
+            from app.core.database import refresh_15m_rollups
+            # Execute rollups synchronously in a thread pool since it's a blocking DB call
+            await asyncio.to_thread(refresh_15m_rollups)
+            
         except asyncio.CancelledError:
             break
         except Exception as e:
