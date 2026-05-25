@@ -27,6 +27,9 @@ from typing import Callable, Any, Dict
 
 from app.core.config import ZONES, SENSOR_INFO
 from app.services.fetchers import get_zone_data
+from app.core.database import stream_historical_data
+from fastapi.responses import StreamingResponse
+import json
 
 def register_zone_routes(app: FastAPI) -> None:
     def _make_zone_handler(z: Dict[str, Any]) -> Callable[[], Any]:
@@ -81,3 +84,52 @@ def register_zone_routes(app: FastAPI) -> None:
     @app.get("/sensor-info")
     async def get_sensors() -> dict:
         return SENSOR_INFO
+
+    @app.get("/historical-data/{location}/{time_range}/{interval}/{metrics}")
+    async def get_historical_data_route(location: str, time_range: str, interval: str, metrics: str, format: str = "json"):
+        def parse_time(t_str: str) -> int:
+            t_str = t_str.lower()
+            if t_str.endswith('mo'): return int(t_str[:-2]) * 30 * 86400
+            if t_str.endswith('m'): return int(t_str[:-1]) * 60
+            if t_str.endswith('h'): return int(t_str[:-1]) * 3600
+            if t_str.endswith('d'): return int(t_str[:-1]) * 86400
+            return 86400 # default 1 day
+
+        time_range_sec = parse_time(time_range)
+        interval_sec = parse_time(interval)
+        if interval_sec == 0:
+            interval_sec = 900 # default 15m
+            
+        metrics_list = metrics.split(',')
+        
+        valid_metrics = {'pm2.5': 'pm2_5', 'pm10': 'pm10', 'temp': 'temp', 'humidity': 'humidity'}
+        actual_metrics = [valid_metrics[m] for m in metrics_list if m in valid_metrics]
+        if not actual_metrics:
+            actual_metrics = ['pm2_5', 'pm10']
+            
+        def generate_json():
+            yield "["
+            first = True
+            for row in stream_historical_data(location, time_range_sec, interval_sec, metrics_list):
+                if not first:
+                    yield ","
+                yield json.dumps(row)
+                first = False
+            yield "]"
+            
+        def generate_csv():
+            header = ["zone_id", "ts"] + actual_metrics
+            yield ",".join(header) + "\n"
+            for row in stream_historical_data(location, time_range_sec, interval_sec, metrics_list):
+                vals = [str(row.get(k, '')) for k in header]
+                yield ",".join(vals) + "\n"
+                
+        headers = {
+            "Cache-Control": "public, max-age=900"
+        }
+        
+        if format.lower() == "csv":
+            headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
+            return StreamingResponse(generate_csv(), media_type="text/csv", headers=headers)
+            
+        return StreamingResponse(generate_json(), media_type="application/json", headers=headers)

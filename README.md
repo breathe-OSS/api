@@ -71,7 +71,7 @@ api/
 - `app/api/routes.py`
   Generates all `/aqi/<zone_id>` endpoints dynamically based on `zones.json`.
 - `app/core/database.py`
-  Handles data persistence using **PostgreSQL** (production) or **SQLite** (local development). Stores sensor readings, temperature, and humidity for historical graph plotting.
+  Handles data persistence using **PostgreSQL** (production) or **SQLite** (local development). Stores sensor readings, temperature, and humidity for historical graph plotting. Also handles Continuous Aggregations (15-minute rollups) via `refresh_15m_rollups` to serve historical queries with high performance.
 - `app/core/config.py`
   Loads environment variables and configuration from `zones.json`, `nodes.json`, and `aqi_breakpoints.json`.
 - `app/core/conversions.py`
@@ -121,6 +121,10 @@ From the `api` directory:
 
 - **Hardware Sensor Metadata**:
   `GET /sensor-info`
+
+- **Historical Data**:
+  `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`
+  Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu-city/30d/15m/pm2.5,pm10?format=json`
 
 ## Development
 The project is designed to be data-driven. Adding a new town or district does not require changing Python code; you simply add a new entry to `zones.json`. Similarly, if government standards change, updating `aqi_breakpoints.json` will instantly update the calculation logic across the entire application.
