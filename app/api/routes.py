@@ -95,6 +95,7 @@ def register_zone_routes(app: FastAPI) -> None:
     ):
         def parse_time(t_str: str) -> int:
             t_str = t_str.lower()
+            if t_str.endswith('y'): return int(t_str[:-1]) * 365 * 86400
             if t_str.endswith('mo'): return int(t_str[:-2]) * 30 * 86400
             if t_str.endswith('m'): return int(t_str[:-1]) * 60
             if t_str.endswith('h'): return int(t_str[:-1]) * 3600
