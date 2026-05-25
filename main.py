@@ -43,17 +43,17 @@ async def periodic_updates():
     while True:
         try:
             await update_all_zones_background()
-            
+
             # Now that raw data is updated, trigger the continuous aggregation
             from app.core.database import refresh_15m_rollups
             # Execute rollups synchronously in a thread pool since it's a blocking DB call
             await asyncio.to_thread(refresh_15m_rollups)
-            
+
         except asyncio.CancelledError:
             break
         except Exception as e:
             print(f"CRITICAL: Background loop error: {e}")
-        
+
         # Wait 15 minutes
         await asyncio.sleep(900)
 
@@ -62,10 +62,11 @@ app = FastAPI(title="breathe backend", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://breatheoss.app",       
-        "https://www.breatheoss.app",   
-        "http://localhost:3000",        
-        "http://localhost:8080",        
+        "https://breatheoss.app",
+        "https://www.breatheoss.app",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://claude.ai"
     ],
     allow_credentials=True,
     allow_methods=["*"],
