@@ -28,7 +28,7 @@ from typing import Callable, Any, Dict
 from app.core.config import ZONES, SENSOR_INFO
 from app.services.fetchers import get_zone_data
 from app.core.database import stream_historical_data
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import json
 
 def register_zone_routes(app: FastAPI) -> None:
@@ -93,6 +93,17 @@ def register_zone_routes(app: FastAPI) -> None:
         metrics: str = Path(..., example="pm2.5,pm10", description="Comma-separated metrics to fetch"),
         format: str = Query("json", example="json", description="Output format (json or csv)")
     ):
+        cache_key = f"hist:{location}:{time_range}:{interval}:{metrics}:{format.lower()}"
+        from app.core.redis_client import redis_client
+        if redis_client:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                headers = {"Cache-Control": "public, max-age=3600"}
+                if format.lower() == "csv":
+                    headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
+                    return Response(content=cached_data, media_type="text/csv", headers=headers)
+                return Response(content=cached_data, media_type="application/json", headers=headers)
+
         def parse_time(t_str: str) -> int:
             t_str = t_str.lower()
             if t_str.endswith('y'): return int(t_str[:-1]) * 365 * 86400
@@ -168,11 +179,29 @@ def register_zone_routes(app: FastAPI) -> None:
                 yield ",".join(vals) + "\n"
                 
         headers = {
-            "Cache-Control": "public, max-age=900"
+            "Cache-Control": "public, max-age=3600"
         }
         
+        import asyncio
+        loop = asyncio.get_running_loop()
+
+        def generate_and_cache(base_generator):
+            buffer = []
+            for chunk in base_generator:
+                yield chunk
+                buffer.append(chunk)
+                        
+            if redis_client:
+                full_content = "".join(buffer)
+                async def save_to_redis():
+                    try:
+                        await redis_client.set(cache_key, full_content, ex=3600)
+                    except Exception as e:
+                        print(f"Redis cache save error: {e}")
+                asyncio.run_coroutine_threadsafe(save_to_redis(), loop)
+
         if format.lower() == "csv":
             headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
-            return StreamingResponse(generate_csv(), media_type="text/csv", headers=headers)
-            
-        return StreamingResponse(generate_json(), media_type="application/json", headers=headers)
+            return StreamingResponse(generate_and_cache(generate_csv()), media_type="text/csv", headers=headers)
+        
+        return StreamingResponse(generate_and_cache(generate_json()), media_type="application/json", headers=headers)

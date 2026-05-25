@@ -29,11 +29,15 @@ from contextlib import asynccontextmanager
 from app.api.routes import register_zone_routes
 from app.services.fetchers import update_all_zones_background
 
+from app.core.redis_client import init_redis_pool, close_redis_pool
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_redis_pool()
     task = asyncio.create_task(periodic_updates())
     yield
     task.cancel()
+    await close_redis_pool()
 
 async def periodic_updates():
     while True:
