@@ -115,14 +115,50 @@ def register_zone_routes(app: FastAPI) -> None:
             actual_metrics = ['pm2_5', 'pm10']
             
         def generate_json():
-            yield "["
+            yield '{"data": ['
             first = True
+            
+            max_pm25 = -1
+            min_pm25 = float('inf')
+            sum_pm25 = 0
+            count_pm25 = 0
+            
+            max_pm10 = -1
+            min_pm10 = float('inf')
+            sum_pm10 = 0
+            count_pm10 = 0
+            
             for row in stream_historical_data(location, time_range_sec, interval_sec, metrics_list):
                 if not first:
                     yield ","
                 yield json.dumps(row)
                 first = False
-            yield "]"
+                
+                pm25 = row.get('pm2_5')
+                pm10 = row.get('pm10')
+                if pm25 is not None:
+                    if pm25 > max_pm25: max_pm25 = pm25
+                    if pm25 < min_pm25: min_pm25 = pm25
+                    sum_pm25 += pm25
+                    count_pm25 += 1
+                    
+                if pm10 is not None:
+                    if pm10 > max_pm10: max_pm10 = pm10
+                    if pm10 < min_pm10: min_pm10 = pm10
+                    sum_pm10 += pm10
+                    count_pm10 += 1
+            
+            stats = {}
+            if count_pm25 > 0 or count_pm10 > 0:
+                stats = {
+                    "max_pm2_5": max_pm25 if max_pm25 >= 0 else None,
+                    "min_pm2_5": min_pm25 if min_pm25 != float('inf') else None,
+                    "avg_pm2_5": round(sum_pm25 / count_pm25, 2) if count_pm25 > 0 else None,
+                    "max_pm10": max_pm10 if max_pm10 >= 0 else None,
+                    "min_pm10": min_pm10 if min_pm10 != float('inf') else None,
+                    "avg_pm10": round(sum_pm10 / count_pm10, 2) if count_pm10 > 0 else None,
+                }
+            yield '], "stats": ' + json.dumps(stats) + '}'
             
         def generate_csv():
             header = ["zone_id", "ts"] + actual_metrics
