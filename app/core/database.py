@@ -314,9 +314,18 @@ def stream_historical_data(location: str, time_range_sec: int, interval_sec: int
     except Exception as e:
         print(f"DB Stream Error: {e}")
     finally:
+        try:
+            c.close()
+        except:
+            pass
         if is_pg:
-            conn.rollback() 
-        c.close()
-        conn.close()
+            try:
+                conn.rollback()
+            except:
+                pass
+        try:
+            conn.close()
+        except:
+            pass
 
 init_db()
