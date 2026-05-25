@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from typing import Callable, Any, Dict
 
 from app.core.config import ZONES, SENSOR_INFO
@@ -86,7 +86,13 @@ def register_zone_routes(app: FastAPI) -> None:
         return SENSOR_INFO
 
     @app.get("/historical-data/{location}/{time_range}/{interval}/{metrics}")
-    async def get_historical_data_route(location: str, time_range: str, interval: str, metrics: str, format: str = "json"):
+    async def get_historical_data_route(
+        location: str = Path(..., example="jammu_city", description="The ID of the zone or 'all'"),
+        time_range: str = Path(..., example="1mo", description="Time range (e.g., 1d, 7d, 1mo, 1y)"),
+        interval: str = Path(..., example="15m", description="Grouping interval (e.g., 15m, 1h, 1d)"),
+        metrics: str = Path(..., example="pm2.5,pm10", description="Comma-separated metrics to fetch"),
+        format: str = Query("json", example="json", description="Output format (json or csv)")
+    ):
         def parse_time(t_str: str) -> int:
             t_str = t_str.lower()
             if t_str.endswith('mo'): return int(t_str[:-2]) * 30 * 86400
