@@ -36,6 +36,10 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
   - The pollutant responsible for this highest value is flagged as the `main_pollutant`.
   - Both the Indian `aqi` and the `us_aqi` are calculated and returned in the final payload.
 
+`[5]` **Averaging Windows**: Because official regulations (like the Indian CPCB and US EPA) define AQI using rolling averages rather than instantaneous spikes, the API processes both:
+   - **Live/Instantaneous AQI**: Computed directly from current sensor values for real-time spike tracking.
+   - **24-Hour Average AQI**: Computed by first aggregating historical raw concentrations over the past 24 hours, and then running those smoothed values back through the AQI formula.
+
 ## Structure
 ```
 api/
