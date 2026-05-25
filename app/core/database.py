@@ -294,8 +294,8 @@ def stream_historical_data(location: str, time_range_sec: int, interval_sec: int
                 {metrics_sql}
             FROM {table}
             WHERE {where_clause}
-            GROUP BY zone_id, ts
-            ORDER BY ts ASC, zone_id ASC
+            GROUP BY zone_id, 2
+            ORDER BY 2 ASC, zone_id ASC
         '''
         
         c.execute(query, params)
