@@ -21,7 +21,7 @@ A modular FastAPI backend designed to retrieve and standardize air quality data 
  - The system scans the `AQI_BREAKPOINTS` (Indian) or `US_BREAKPOINTS` configuration to find the specific range [Clo​,Chi​] that the current concentration falls into.
  - The system applies the standard AQI formula:
 
-    `I=[(Chi​−Clo​)(Ihi​−Ilo​)​×(C−Clo​)]+Ilo​`
+    $$I = \left[ \frac{I_{hi} - I_{lo}}{C_{hi} - C_{lo}} \times (C - C_{lo}) \right] + I_{lo}$$
 
   Where:
   - **I**: The calculated AQI sub-index.
