@@ -1,31 +1,42 @@
 {
-    "SRINAGAR_AIRGRADIENT_NODES": [
-        {
-            "location_id": 172681,
-            "name": "Kanipora",
-            "enabled": true
-        },
-        {
-            "location_id": 170398,
-            "name": "Bemina",
-            "enabled": true
-        }
-    ],
-    "JAMMU_AIRGRADIENT_NODES": [
-        {
-            "location_id": 182171,
-            "name": "Talab Tillo",
-            "enabled": true
-        },
-        {
-            "location_id": 184303,
-            "name": "Gandhi Nagar",
-            "enabled": true
-        }
-    ],
-    "RAJOURI_AIRGRADIENT_CONFIG": {
+  "srinagar": {
+    "token_env_var": "AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 172681,
+        "name": "Kanipora",
+        "enabled": true
+      },
+      {
+        "location_id": 170398,
+        "name": "Bemina",
+        "enabled": true
+      }
+    ]
+  },
+  "jammu_city": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 182171,
+        "name": "Talab Tillo",
+        "enabled": true
+      },
+      {
+        "location_id": 184303,
+        "name": "Gandhi Nagar",
+        "enabled": true
+      }
+    ]
+  },
+  "rajouri_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
         "location_id": 184149,
         "name": "Gujjar Mandi",
         "enabled": true
-    }
+      }
+    ]
+  }
 }

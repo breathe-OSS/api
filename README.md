@@ -88,7 +88,7 @@ api/
 - `app/data/zones.json`
   Contains zone definitions including names, coordinates, and `zone_type` (`hills`, `urban`, `industrial`) for customized AQI calculation.
 - `app/data/nodes.json`
-  Maps specific physical sensor locations (`location_id`) to city-level zones.
+  Maps specific zones to their physical sensor configurations (`location_id`) and dynamic API token environment variables (`token_env_var`).
 - `app/data/sensor_info.json`
   Stores hardware-specific metadata for ground sensors (model, coordinates, installation dates).
 - `app/data/aqi_breakpoints.json`
@@ -131,4 +131,10 @@ From the `api` directory:
   Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu-city/30d/15m/pm2.5,pm10?format=json`
 
 ## Development
-The project is designed to be data-driven. Adding a new town or district does not require changing Python code; you simply add a new entry to `zones.json`. Similarly, if government standards change, updating `aqi_breakpoints.json` will instantly update the calculation logic across the entire application.
+The project is designed to be data-driven. Adding or modifying zones (e.g., converting a zone from satellite to physical AirGradient sensors) does not require changing Python code:
+
+1. **Update `zones.json`**: Change the zone's `provider` (e.g., from `"openmeteo"` to `"airgradient"`).
+2. **Update `nodes.json`**: Map the `zone_id` to its AirGradient API token environment variable (`token_env_var`) and list of physical sensor location IDs.
+3. **Update `sensor_info.json`**: Add the physical sensor metadata to expose it correctly on frontend maps.
+
+Similarly, if government standards change, updating `aqi_breakpoints.json` will instantly update the calculation logic across the entire application.

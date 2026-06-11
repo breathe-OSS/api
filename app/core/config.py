@@ -38,12 +38,6 @@ def _load_json(fname: str) -> Dict[str, Any]:
 
 ZONES = _load_json("zones.json")
 AQI_BREAKPOINTS = _load_json("aqi_breakpoints.json")
-airgradient_token = os.getenv("AIRGRADIENT_TOKEN")
-jammu_airgradient_token = os.getenv("JAMMU_AIRGRADIENT_TOKEN") # this is currently being used for jammu and rajouri, and will probably will also be used for future sensors
-
-_nodes_config = _load_json("nodes.json")
+NODES_CONFIG = _load_json("nodes.json")
 SENSOR_INFO = _load_json("sensor_info.json")
 
-SRINAGAR_AIRGRADIENT_NODES = _nodes_config.get("SRINAGAR_AIRGRADIENT_NODES", [])
-JAMMU_AIRGRADIENT_NODES = _nodes_config.get("JAMMU_AIRGRADIENT_NODES", [])
-RAJOURI_AIRGRADIENT_CONFIG = _nodes_config.get("RAJOURI_AIRGRADIENT_CONFIG", {})

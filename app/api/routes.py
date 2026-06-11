@@ -87,11 +87,11 @@ def register_zone_routes(app: FastAPI) -> None:
 
     @app.get("/historical-data/{location}/{time_range}/{interval}/{metrics}")
     async def get_historical_data_route(
-        location: str = Path(..., example="jammu_city", description="The ID of the zone or 'all'"),
-        time_range: str = Path(..., example="1mo", description="Time range (e.g., 1d, 7d, 1mo, 1y)"),
-        interval: str = Path(..., example="15m", description="Grouping interval (e.g., 15m, 1h, 1d)"),
-        metrics: str = Path(..., example="pm2.5,pm10", description="Comma-separated metrics to fetch"),
-        format: str = Query("json", example="json", description="Output format (json or csv)")
+        location: str = Path(..., examples=["jammu_city"], description="The ID of the zone or 'all'"),
+        time_range: str = Path(..., examples=["1mo"], description="Time range (e.g., 1d, 7d, 1mo, 1y)"),
+        interval: str = Path(..., examples=["15m"], description="Grouping interval (e.g., 15m, 1h, 1d)"),
+        metrics: str = Path(..., examples=["pm2.5,pm10"], description="Comma-separated metrics to fetch"),
+        format: str = Query("json", examples=["json"], description="Output format (json or csv)")
     ):
         cache_key = f"hist:{location}:{time_range}:{interval}:{metrics}:{format.lower()}"
         from app.core.redis_client import redis_client

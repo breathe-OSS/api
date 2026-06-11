@@ -28,9 +28,10 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from typing import Dict, Any, List
 
-from app.core.config import ZONES, SRINAGAR_AIRGRADIENT_NODES, JAMMU_AIRGRADIENT_NODES, RAJOURI_AIRGRADIENT_CONFIG, airgradient_token, jammu_airgradient_token
+from app.core.config import ZONES, NODES_CONFIG
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
+import os
 
 _RAM_CACHE = {}
 _SPIKE_CACHE = {}
@@ -660,7 +661,9 @@ async def fetch_openmeteo_live(lat: float, lon: float, zone_type: str) -> Dict[s
                 history.append({
                     "ts": times[i],
                     "aqi": aqi_res["aqi"],
-                    "us_aqi": aqi_res.get("us_aqi", 0)
+                    "us_aqi": aqi_res.get("us_aqi", 0),
+                    "pm2_5": hour_comps.get("pm2_5"),
+                    "pm10": hour_comps.get("pm10")
                 })
             except:
                 continue
@@ -720,64 +723,76 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
     try:
         sensor_offline_warning = None
         
-        if zone_id in ("srinagar", "jammu_city", "rajouri_town"):
-            if zone_id == "srinagar":
-                nodes = SRINAGAR_AIRGRADIENT_NODES
-                token = airgradient_token
-            elif zone_id == "jammu_city":
-                nodes = JAMMU_AIRGRADIENT_NODES
-                token = jammu_airgradient_token
-            else:  
-                nodes = [RAJOURI_AIRGRADIENT_CONFIG]  
-                token = jammu_airgradient_token
+        zone_info = ZONES.get(zone_id)
+        if zone_info and zone_info.get("provider") == "airgradient":
+            zone_node_cfg = NODES_CONFIG.get(zone_id)
+            token_env_var = zone_node_cfg.get("token_env_var") if zone_node_cfg else None
+            token = os.getenv(token_env_var) if token_env_var else None
             
-            nodes = [n for n in nodes if n.get("enabled", True)]
-            if not nodes:
-                raise ValueError(f"All nodes for {zone_id} are disabled")
-            
-            try:
-                if len(nodes) > 1:
-                    fetched_data = await fetch_multi_node_airgradient(
-                        zone_id=zone_id,
-                        nodes=nodes,
-                        token=token,
-                        lat=lat,
-                        lon=lon,
-                        zone_type=zone_type
-                    )
-                    source_name = f"airgradient ({fetched_data['current_comps']['_node_count']}/{fetched_data['current_comps']['_total_nodes']} sensors) + openmeteo"
-                    
-                    if "_spike_warning" in fetched_data["current_comps"]:
-                        sensor_offline_warning = fetched_data["current_comps"]["_spike_warning"]
+            if not zone_node_cfg or not token_env_var or not token:
+                if not zone_node_cfg:
+                    err_msg = f"No AirGradient configuration found for zone {zone_id} in nodes.json"
+                elif not token_env_var:
+                    err_msg = f"Missing 'token_env_var' configuration for AirGradient zone '{zone_id}' in nodes.json"
                 else:
-                    config = nodes[0]
-                    fetched_data = await fetch_airgradient_common(
-                        zone_id=zone_id,
-                        loc_id=config["location_id"],
-                        token=token,
-                        lat=lat,
-                        lon=lon,
-                        zone_type=zone_type,
-                        node_name=config.get("name", "Node 1")
-                    )
-                    source_name = "airgradient + openmeteo"
+                    err_msg = f"AirGradient token environment variable '{token_env_var}' is not set/empty for zone '{zone_id}'"
                 
-                pm25 = fetched_data["current_comps"].get("pm2_5")
-                if pm25 is None:
-                    raise ValueError("No PM2.5 data from sensor")
-                
-                # Older than 1 hour = sensor offline (for single node or all nodes)
-                ag_timestamp = fetched_data["current_comps"].get("_ag_timestamp")
-                if ag_timestamp:
-                    data_age = current_time - ag_timestamp
-                    if data_age > 3600:  # 1 hour
-                        raise ValueError(f"Sensor data is stale ({int(data_age/60)} minutes old)")
-                    
-            except Exception as e:
-                print(f"Sensor offline for {zone_id}: {e}, falling back to Open-Meteo")
+                print(f"CRITICAL CONFIG ERROR for {zone_id}: {err_msg}. Falling back to Open-Meteo...")
                 fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
                 source_name = "openmeteo air pollution api"
-                sensor_offline_warning = "Physical sensor temporarily offline. Using satellite-based estimates from Open-Meteo."
+                sensor_offline_warning = "System configuration error: Missing AirGradient credentials. Using estimates from Open-Meteo."
+            else:
+                nodes = zone_node_cfg.get("nodes", [])
+                nodes = [n for n in nodes if n.get("enabled", True)]
+                if not nodes:
+                    print(f"CRITICAL CONFIG ERROR for {zone_id}: All nodes are disabled. Falling back to Open-Meteo...")
+                    fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+                    source_name = "openmeteo air pollution api"
+                    sensor_offline_warning = "System configuration error: All nodes for this zone are disabled. Using estimates from Open-Meteo."
+                else:
+                    try:
+                        if len(nodes) > 1:
+                            fetched_data = await fetch_multi_node_airgradient(
+                                zone_id=zone_id,
+                                nodes=nodes,
+                                token=token,
+                                lat=lat,
+                                lon=lon,
+                                zone_type=zone_type
+                            )
+                            source_name = f"airgradient ({fetched_data['current_comps']['_node_count']}/{fetched_data['current_comps']['_total_nodes']} sensors) + openmeteo"
+                            
+                            if "_spike_warning" in fetched_data["current_comps"]:
+                                sensor_offline_warning = fetched_data["current_comps"]["_spike_warning"]
+                        else:
+                            config = nodes[0]
+                            fetched_data = await fetch_airgradient_common(
+                                zone_id=zone_id,
+                                loc_id=config["location_id"],
+                                token=token,
+                                lat=lat,
+                                lon=lon,
+                                zone_type=zone_type,
+                                node_name=config.get("name", "Node 1")
+                            )
+                            source_name = "airgradient + openmeteo"
+                    
+                        pm25 = fetched_data["current_comps"].get("pm2_5")
+                        if pm25 is None:
+                            raise ValueError("No PM2.5 data from sensor")
+                        
+                        # Older than 1 hour = sensor offline
+                        ag_timestamp = fetched_data["current_comps"].get("_ag_timestamp")
+                        if ag_timestamp:
+                            data_age = current_time - ag_timestamp
+                            if data_age > 3600:  # 1 hour
+                                raise ValueError(f"Sensor data is stale ({int(data_age/60)} minutes old)")
+                        
+                    except Exception as e:
+                        print(f"Sensor offline for {zone_id}: {e}, falling back to Open-Meteo")
+                        fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+                        source_name = "openmeteo air pollution api"
+                        sensor_offline_warning = "Physical sensor temporarily offline. Using satellite-based estimates from Open-Meteo."
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
             source_name = "openmeteo air pollution api"
