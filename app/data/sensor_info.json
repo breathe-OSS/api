@@ -45,6 +45,17 @@
       "installation_date": "Feb 7, 2026"
     },
     {
+      "name": "Channi Himmat",
+      "zone": "Jammu",
+      "location_id": 195730,
+      "provider": "AirGradient",
+      "model": "0-1PST",
+      "is_kit": true,
+      "latitude": 32.689777,
+      "longitude": 74.886016,
+      "installation_date": "Jun 13, 2026"
+    },
+    {
       "name": "Gujjar Mandi",
       "zone": "Rajouri",
       "location_id": 184149,

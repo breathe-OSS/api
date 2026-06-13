@@ -26,6 +26,11 @@
         "location_id": 184303,
         "name": "Gandhi Nagar",
         "enabled": true
+      },
+      {
+        "location_id": 195730,
+        "name": "Channi Himmat",
+        "enabled": true
       }
     ]
   },
