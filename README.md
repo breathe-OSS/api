@@ -1,5 +1,5 @@
 # Breathe backend
-A modular FastAPI backend designed to retrieve and standardize air quality data across the Jammu & Kashmir region for the **BreatheOSS** clients. The system aggregates data from multiple providers: **OpenMeteo** for satellite-based estimates and **AirGradient** for high-precision ground sensors. It currently calculates AQI based on both **Indian (CPCB)** and **US EPA** standards.
+A modular FastAPI backend designed to retrieve and standardize air quality data across the J&K & Ladakh region for the **BreatheOSS** clients. The system aggregates data from multiple providers: **OpenMeteo** for satellite-based estimates and **AirGradient** for high-precision ground sensors. It currently calculates AQI based on both **Indian (CPCB)** and **US EPA** standards.
 
 ## How the AQI is Calculated
 
