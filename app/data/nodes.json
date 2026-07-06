@@ -48,5 +48,15 @@
         "enabled": true
       }
     ]
+  },
+  "bandipora_town": {
+    "token_env_var": "AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 198158,
+        "name": "Ahamshrief",
+        "enabled": true
+      }
+    ]
   }
 }

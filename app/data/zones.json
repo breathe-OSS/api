@@ -10,7 +10,7 @@
   "bandipora_town": {
     "id": "bandipora_town",
     "name": "Bandipora",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 34.4174,
     "lon": 74.6437,
     "zone_type": "hills"

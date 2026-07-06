@@ -76,6 +76,17 @@
       "latitude": 33.162408,
       "longitude": 74.23779,
       "installation_date": "Jul 6, 2026"
+    },
+    {
+      "name": "Ahamshrief",
+      "zone": "Bandipora",
+      "location_id": 198158,
+      "provider": "AirGradient",
+      "model": "0-1P",
+      "is_kit": true,
+      "latitude": 34.4494,
+      "longitude": 74.6635,
+      "installation_date": "Jul 6, 2026"
     }
   ]
 }
