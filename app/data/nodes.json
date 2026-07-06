@@ -41,6 +41,11 @@
         "location_id": 184149,
         "name": "Gujjar Mandi",
         "enabled": true
+      },
+      {
+        "location_id": 197953,
+        "name": "Nowshera",
+        "enabled": true
       }
     ]
   }

@@ -65,6 +65,17 @@
       "latitude": 33.380775,
       "longitude": 74.314353,
       "installation_date": "Feb 5, 2026"
+    },
+    {
+      "name": "Nowshera",
+      "zone": "Rajouri",
+      "location_id": 197953,
+      "provider": "AirGradient",
+      "model": "0-1P",
+      "is_kit": true,
+      "latitude": 33.162408,
+      "longitude": 74.23779,
+      "installation_date": "Jul 6, 2026"
     }
   ]
 }
