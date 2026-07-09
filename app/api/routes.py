@@ -108,6 +108,7 @@ def register_zone_routes(app: FastAPI) -> None:
             t_str = t_str.lower()
             if t_str.endswith('y'): return int(t_str[:-1]) * 365 * 86400
             if t_str.endswith('mo'): return int(t_str[:-2]) * 30 * 86400
+            if t_str.endswith('w'): return int(t_str[:-1]) * 7 * 86400
             if t_str.endswith('m'): return int(t_str[:-1]) * 60
             if t_str.endswith('h'): return int(t_str[:-1]) * 3600
             if t_str.endswith('d'): return int(t_str[:-1]) * 86400
