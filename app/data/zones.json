@@ -26,7 +26,7 @@
   "doda_town": {
     "id": "doda_town",
     "name": "Doda",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 33.1320,
     "lon": 75.5670,
     "zone_type": "hills"

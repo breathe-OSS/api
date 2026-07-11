@@ -58,5 +58,15 @@
         "enabled": true
       }
     ]
+  },
+  "doda_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 198810,
+        "name": "Kashtigarh",
+        "enabled": true
+      }
+    ]
   }
 }

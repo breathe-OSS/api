@@ -87,6 +87,17 @@
       "latitude": 34.4494,
       "longitude": 74.6635,
       "installation_date": "Jul 6, 2026"
+    },
+    {
+      "name": "Kashtigarh",
+      "zone": "Doda",
+      "location_id": 198810,
+      "provider": "AirGradient",
+      "model": "0-1P",
+      "is_kit": true,
+      "latitude": 33.1567,
+      "longitude": 75.4517,
+      "installation_date": "11 Jul 2026"
     }
   ]
 }
