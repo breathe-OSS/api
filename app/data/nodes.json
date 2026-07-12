@@ -68,5 +68,15 @@
         "enabled": true
       }
     ]
+  },
+  "udhampur_city": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 198850,
+        "name": "Udhampur City",
+        "enabled": true
+      }
+    ]
   }
 }

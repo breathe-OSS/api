@@ -194,9 +194,9 @@
   "udhampur_city": {
     "id": "udhampur_city",
     "name": "Udhampur",
-    "provider": "openmeteo",
-    "lat": 32.9160,
-    "lon": 75.1416,
+    "provider": "airgradient",
+    "lat": 32.9165,
+    "lon": 75.1326,
     "zone_type": "urban"
   }
 }

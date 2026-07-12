@@ -98,6 +98,17 @@
       "latitude": 33.1567,
       "longitude": 75.4517,
       "installation_date": "11 Jul 2026"
+    },
+    {
+      "name": "Udhampur City",
+      "zone": "Udhampur",
+      "location_id": 198850,
+      "provider": "AirGradient",
+      "model": "0-1P",
+      "is_kit": true,
+      "latitude": 32.9165,
+      "longitude": 75.1326,
+      "installation_date": "12 Jul 2026"
     }
   ]
 }
