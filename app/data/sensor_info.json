@@ -109,6 +109,17 @@
       "latitude": 32.9165,
       "longitude": 75.1326,
       "installation_date": "12 Jul 2026"
+    },
+    {
+      "name": "Zero Waste Ladakh",
+      "zone": "Leh",
+      "location_id": 199009,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 34.14554,
+      "longitude": 77.563278,
+      "installation_date": "15 Jul 2026"
     }
   ]
 }

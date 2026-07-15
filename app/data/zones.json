@@ -106,7 +106,7 @@
   "leh": {
     "id": "leh",
     "name": "Leh",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 34.1526,
     "lon": 77.5771,
     "zone_type": "urban"

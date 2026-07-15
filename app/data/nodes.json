@@ -78,5 +78,15 @@
         "enabled": true
       }
     ]
+  },
+  "leh": {
+    "token_env_var": "AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 199009,
+        "name": "Zero Waste Ladakh",
+        "enabled": true
+      }
+    ]
   }
 }
