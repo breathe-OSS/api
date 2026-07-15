@@ -212,10 +212,14 @@ async def fetch_airgradient_common(
     if not token:
         raise HTTPException(status_code=500, detail=f"Missing AG Token for {zone_id}")
 
-    await ensure_history_exists(zone_id, loc_id, token)
+    if token != "PUBLIC_TOKEN":
+        await ensure_history_exists(zone_id, loc_id, token)
 
     async with httpx.AsyncClient(timeout=20) as client:
-        curr_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={token}"
+        if token == "PUBLIC_TOKEN":
+            curr_url = "https://api.airgradient.com/public/api/v1/world/locations/measures/current"
+        else:
+            curr_url = f"https://api.airgradient.com/public/api/v1/locations/{loc_id}/measures/current?token={token}"
         task_curr = client.get(curr_url)
         
         om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -235,6 +239,9 @@ async def fetch_airgradient_common(
 
     if ag_resp.status_code == 200:
         d = ag_resp.json()
+        if token == "PUBLIC_TOKEN":
+            if isinstance(d, list):
+                d = next((s for s in d if s.get("locationId") == loc_id), {})
         pm25 = d.get("pm02_corrected") or d.get("pm02")
         pm10 = d.get("pm10_corrected") or d.get("pm10")
         
@@ -367,7 +374,10 @@ async def fetch_multi_node_airgradient(
     async with httpx.AsyncClient(timeout=20) as client:
         curr_tasks = []
         for node in nodes:
-            url = f"https://api.airgradient.com/public/api/v1/locations/{node['location_id']}/measures/current?token={token}"
+            if token == "PUBLIC_TOKEN":
+                url = "https://api.airgradient.com/public/api/v1/world/locations/measures/current"
+            else:
+                url = f"https://api.airgradient.com/public/api/v1/locations/{node['location_id']}/measures/current?token={token}"
             curr_tasks.append(client.get(url))
         
         om_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -413,6 +423,14 @@ async def fetch_multi_node_airgradient(
             continue
         
         data = resp.json()
+        if token == "PUBLIC_TOKEN":
+            if isinstance(data, list):
+                sensor_data = next((s for s in data if s.get("locationId") == node_cfg["location_id"]), None)
+                if not sensor_data:
+                    node_statuses.append({"node": node_name, "status": "offline"})
+                    continue
+                data = sensor_data
+                
         pm25 = data.get("pm02_corrected") or data.get("pm02")
         pm10 = data.get("pm10_corrected") or data.get("pm10")
         
@@ -727,7 +745,12 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
         if zone_info and zone_info.get("provider") == "airgradient":
             zone_node_cfg = NODES_CONFIG.get(zone_id)
             token_env_var = zone_node_cfg.get("token_env_var") if zone_node_cfg else None
-            token = os.getenv(token_env_var) if token_env_var else None
+            
+            is_public = token_env_var and "PUBLIC" in token_env_var.upper()
+            if is_public:
+                token = "PUBLIC_TOKEN"
+            else:
+                token = os.getenv(token_env_var) if token_env_var else None
             
             if not zone_node_cfg or not token_env_var or not token:
                 if not zone_node_cfg:

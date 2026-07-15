@@ -80,7 +80,7 @@
     ]
   },
   "leh": {
-    "token_env_var": "AIRGRADIENT_TOKEN",
+    "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN",
     "nodes": [
       {
         "location_id": 199009,
