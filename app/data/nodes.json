@@ -88,5 +88,15 @@
         "enabled": true
       }
     ]
+  },
+  "samba_town": {
+    "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 199913,
+        "name": "Vijaypur",
+        "enabled": true
+      }
+    ]
   }
 }

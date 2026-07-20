@@ -120,6 +120,17 @@
       "latitude": 34.14554,
       "longitude": 77.563278,
       "installation_date": "15 Jul 2026"
+    },
+    {
+      "name": "Vijaypur",
+      "zone": "Samba",
+      "location_id": 199913,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 32.566932,
+      "longitude": 75.019868,
+      "installation_date": "20 Jul 2026"
     }
   ]
 }

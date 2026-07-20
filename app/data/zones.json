@@ -162,7 +162,7 @@
   "samba_town": {
     "id": "samba_town",
     "name": "Samba",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 32.5623,
     "lon": 75.1190,
     "zone_type": "industrial"
