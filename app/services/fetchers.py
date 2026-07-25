@@ -249,21 +249,65 @@ async def fetch_airgradient_common(
         temp_val = d.get("atmp_corrected") or d.get("atmp")
         humid_val = d.get("rhum_corrected") or d.get("rhum")
         
-        current_comps["pm2_5"] = float(pm25) if pm25 is not None else None
-        current_comps["pm10"] = float(pm10) if pm10 is not None else None
-        current_comps["temp"] = float(temp_val) if temp_val is not None else None
-        current_comps["humidity"] = float(humid_val) if humid_val is not None else None
-
+        current_time = datetime.now().timestamp()
+        node_cache_key = f"{zone_id}_{node_name}"
+        spike_warning = None
+        
+        if node_cache_key in _SPIKE_CACHE:
+            spike_time = _SPIKE_CACHE[node_cache_key]
+            time_since_spike = current_time - spike_time
+            
+            if time_since_spike < SPIKE_GRACE_PERIOD:
+                remaining_minutes = int((SPIKE_GRACE_PERIOD - time_since_spike) / 60)
+                spike_warning = f"{node_name}: excluded due to recent spike (grace period: {remaining_minutes} mins remaining)"
+                pm25 = None
+                pm10 = None
+            else:
+                del _SPIKE_CACHE[node_cache_key]
+        
+        reading_ts = current_time
         ag_timestamp_raw = d.get("timestamp")
-        reading_ts = datetime.now().timestamp()
         if ag_timestamp_raw:
-            # API returns ISO format
             try:
                 dt = datetime.fromisoformat(ag_timestamp_raw.replace("Z", "+00:00"))
                 reading_ts = dt.timestamp()
                 current_comps["_ag_timestamp"] = reading_ts
             except:
                 pass
+                
+        if pm25 is not None:
+            pm25_val = float(pm25)
+            pm10_val = float(pm10) if pm10 is not None else 0.0
+            
+            if pm25_val > 650 or pm10_val > 600:
+                spike_warning = f"{node_name}: absolute threshold exceeded (PM2.5={pm25_val:.0f} or PM10={pm10_val:.0f})"
+                _SPIKE_CACHE[node_cache_key] = current_time
+                pm25 = None
+                pm10 = None
+            else:
+                node_history_24h = database.get_history(zone_id, hours=24)
+                if node_history_24h:
+                    target_ts = reading_ts - 3600
+                    closest_reading = min(node_history_24h, key=lambda h: abs(h["ts"] - target_ts))
+                    time_diff = abs(closest_reading["ts"] - target_ts)
+                    if time_diff < 5400:
+                        pm25_1h_ago = closest_reading["pm2_5"]
+                        pm25_jump = pm25_val - pm25_1h_ago
+                        if pm25_jump > 200:
+                            spike_warning = f"{node_name}: sudden spike detected (PM2.5 jumped +{int(pm25_jump)} in 1 hour)"
+                            _SPIKE_CACHE[node_cache_key] = current_time
+                            pm25 = None
+                            pm10 = None
+
+        current_comps["pm2_5"] = float(pm25) if pm25 is not None else None
+        current_comps["pm10"] = float(pm10) if pm10 is not None else None
+        current_comps["temp"] = float(temp_val) if temp_val is not None else None
+        current_comps["humidity"] = float(humid_val) if humid_val is not None else None
+        
+        if spike_warning:
+            current_comps["_spike_warning"] = spike_warning
+
+
         
         # Save reading to DB
         if pm25 is not None:
@@ -799,6 +843,9 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
                                 node_name=config.get("name", "Node 1")
                             )
                             source_name = "airgradient + openmeteo"
+                            
+                            if "_spike_warning" in fetched_data["current_comps"]:
+                                sensor_offline_warning = fetched_data["current_comps"]["_spike_warning"]
                     
                         pm25 = fetched_data["current_comps"].get("pm2_5")
                         if pm25 is None:
