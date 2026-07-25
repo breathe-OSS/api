@@ -23,6 +23,17 @@
       "installation_date": "May 24, 2025"
     },
     {
+      "name": "Hazratbal",
+      "zone": "Srinagar",
+      "location_id": 200478,
+      "provider": "AirGradient",
+      "model": "O-1PST",
+      "is_kit": false,
+      "latitude": 34.1292,
+      "longitude": 74.8422,
+      "installation_date": "23 Jul, 2026"
+    },
+    {
       "name": "Talab Tillo",
       "zone": "Jammu",
       "location_id": 182171,

@@ -11,6 +11,11 @@
         "location_id": 170398,
         "name": "Bemina",
         "enabled": true
+      },
+      {
+        "location_id": 200478,
+        "name": "Hazratbal",
+        "enabled": true
       }
     ]
   },
