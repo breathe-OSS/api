@@ -40,6 +40,24 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def check_postgres_health() -> bool:
+    """Check connection health for PostgreSQL"""
+    conn = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT 1;")
+        c.fetchone()
+        return True
+    except Exception:
+        return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 def init_db():
     conn = get_connection()
     c = conn.cursor()

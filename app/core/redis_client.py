@@ -24,3 +24,15 @@ async def close_redis_pool():
     if redis_client:
         await redis_client.close()
         await redis_client.connection_pool.disconnect()
+
+async def check_redis_health() -> bool:
+    """Check connection health for Redis."""
+    global redis_client
+    if redis_client is None:
+        return False
+    try:
+        res = await redis_client.ping()
+        return bool(res)
+    except Exception:
+        return False
+

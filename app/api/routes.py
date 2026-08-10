@@ -22,16 +22,35 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from fastapi import FastAPI, HTTPException, Path, Query
+import asyncio
+import json
 from typing import Callable, Any, Dict
+from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 
 from app.core.config import ZONES, SENSOR_INFO
 from app.services.fetchers import get_zone_data
-from app.core.database import stream_historical_data
-from fastapi.responses import StreamingResponse, Response
-import json
+from app.core.database import stream_historical_data, check_postgres_health
+from app.core.redis_client import check_redis_health
 
 def register_zone_routes(app: FastAPI) -> None:
+    @app.get("/health")
+    async def health_check():
+        postgres_ok, redis_ok = await asyncio.gather(
+            asyncio.to_thread(check_postgres_health),
+            check_redis_health(),
+        )
+
+        all_ok = postgres_ok and redis_ok
+
+        payload = {
+            "status": "ok" if all_ok else "degraded",
+            "postgres": "ok" if postgres_ok else "down",
+            "redis": "ok" if redis_ok else "down",
+        }
+
+        status_code = status.HTTP_200_OK if all_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(status_code=status_code, content=payload)
     def _make_zone_handler(z: Dict[str, Any]) -> Callable[[], Any]:
         z_type = z.get("zone_type", "hills") 
 
