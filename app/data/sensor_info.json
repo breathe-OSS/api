@@ -34,6 +34,17 @@
       "installation_date": "23 Jul, 2026"
     },
     {
+      "name": "Jeelanabad, Batpora",
+      "zone": "Srinagar",
+      "location_id": 199426,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 34.159,
+      "longitude": 74.8402,
+      "installation_date": "10 Aug, 2026"
+    },
+    {
       "name": "Talab Tillo",
       "zone": "Jammu",
       "location_id": 182171,

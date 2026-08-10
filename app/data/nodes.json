@@ -16,6 +16,11 @@
         "location_id": 200478,
         "name": "Hazratbal",
         "enabled": true
+      },
+      {
+        "location_id": 199426,
+        "name": "Jeelanabad, Batpora",
+        "enabled": true
       }
     ]
   },
