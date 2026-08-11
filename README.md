@@ -66,7 +66,9 @@ api/
     │   └── aqi_breakpoints.json
     └── services/               # Data fetching & processing
         ├── __init__.py
-        └── fetchers.py
+        ├── fetchers.py
+        ├── seasonal.py
+        └── weather.py
 ```
 
 ## Main modules
@@ -85,6 +87,10 @@ api/
    - `fetch_openmeteo_live`: Queries satellite-based pollutant data.
    - `fetch_multi_node_airgradient`: Averages data from multiple AirGradient nodes (e.g., Jammu and Srinagar), with built-in spike detection, grace periods for erratic nodes, and stale data protection.
    - `get_zone_data`: Implements a multi-layered caching strategy. It prioritize ground sensors but automatically falls back to satellite data if physical sensors are offline or reporting unrealistic spikes.
+- `app/services/seasonal.py`
+  Builds per-zone monthly climatology (average PM2.5, PM10, rainfall, and temperature per calendar month) by backfilling ~4 years of Open-Meteo reanalysis data. Refreshed automatically every 30 days by the background scheduler. Powers the `/seasonal/<zone_id>` endpoint so clients can show how pollution typically behaves across winter, monsoon, and summer.
+- `app/services/weather.py`
+  Fetches the live weather condition per zone and classifies it (`rain`, `snow`, `fog`, `smog`, `clear`, `cloudy`). Fog with high PM2.5 is reported as smog. Generates a season-aware informational text included in the `/aqi/<zone_id>` payload under `weather`. Also serves condition-tagged historical buckets for the `/weather-history` endpoint so clients can filter AQI history by weather.
 - `app/data/zones.json`
   Contains zone definitions including names, coordinates, and `zone_type` (`hills`, `urban`, `industrial`) for customized AQI calculation.
 - `app/data/nodes.json`
@@ -125,6 +131,14 @@ From the `api` directory:
 
 - **Hardware Sensor Metadata**:
   `GET /sensor-info`
+
+- **Seasonal Climatology**:
+  `GET /seasonal/{zone_id}`
+  Returns 12 monthly entries with typical PM2.5, PM10, AQI, rainfall (mm), and temperature for the zone, plus the current month and season label. Backed by Open-Meteo reanalysis (2022 to present) and blended with ground sensor monthly averages where enough samples exist.
+
+- **Weather History**:
+  `GET /weather-history/{zone_id}/{time_range}/{interval}`
+  Returns time buckets tagged with a weather condition (`rain`, `snow`, `fog`, `thunderstorm`, `clear`, `cloudy`) and precipitation totals, aligned with `/historical-data` bucketing so clients can filter AQI history by weather. Example: `/weather-history/srinagar/1w/1h`
 
 - **Historical Data**:
   `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`

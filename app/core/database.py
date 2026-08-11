@@ -95,6 +95,19 @@ def init_db():
                 UNIQUE(zone_id, ts)
             )
         ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS seasonal_climatology (
+                zone_id TEXT NOT NULL,
+                month INTEGER NOT NULL,
+                pm2_5 REAL,
+                pm10 REAL,
+                precipitation REAL,
+                temp REAL,
+                updated_at REAL,
+                UNIQUE(zone_id, month)
+            )
+        ''')
     else:
         c.execute('''
             CREATE TABLE IF NOT EXISTS sensor_readings (
@@ -126,7 +139,20 @@ def init_db():
                 UNIQUE(zone_id, ts)
             )
         ''')
-    
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS seasonal_climatology (
+                zone_id TEXT NOT NULL,
+                month INTEGER NOT NULL,
+                pm2_5 REAL,
+                pm10 REAL,
+                precipitation REAL,
+                temp REAL,
+                updated_at REAL,
+                UNIQUE(zone_id, month)
+            )
+        ''')
+
     c.execute('CREATE INDEX IF NOT EXISTS idx_zone_time ON sensor_readings (zone_id, timestamp)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_zone_time_15m ON sensor_readings_15m (zone_id, ts)')
     conn.commit()
@@ -216,6 +242,99 @@ def get_history(zone_id, hours=24):
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+def save_seasonal_climatology(zone_id, months: list[dict]):
+    if not months:
+        return
+
+    conn = get_connection()
+    c = conn.cursor()
+    is_pg = hasattr(conn, 'dsn')
+
+    try:
+        if is_pg:
+            c.executemany('''
+                INSERT INTO seasonal_climatology (zone_id, month, pm2_5, pm10, precipitation, temp, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (zone_id, month) DO UPDATE SET
+                    pm2_5 = EXCLUDED.pm2_5,
+                    pm10 = EXCLUDED.pm10,
+                    precipitation = EXCLUDED.precipitation,
+                    temp = EXCLUDED.temp,
+                    updated_at = EXCLUDED.updated_at
+            ''', [
+                (zone_id, m["month"], m["pm2_5"], m["pm10"], m["precipitation"], m["temp"], m["updated_at"])
+                for m in months
+            ])
+        else:
+            c.executemany('''
+                INSERT INTO seasonal_climatology (zone_id, month, pm2_5, pm10, precipitation, temp, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(zone_id, month) DO UPDATE SET
+                    pm2_5 = excluded.pm2_5,
+                    pm10 = excluded.pm10,
+                    precipitation = excluded.precipitation,
+                    temp = excluded.temp,
+                    updated_at = excluded.updated_at
+            ''', [
+                (zone_id, m["month"], m["pm2_5"], m["pm10"], m["precipitation"], m["temp"], m["updated_at"])
+                for m in months
+            ])
+
+        conn.commit()
+    except Exception as e:
+        print(f"DB Climatology Save Error: {e}")
+    finally:
+        conn.close()
+
+def get_seasonal_climatology(zone_id):
+    conn = get_connection()
+    c = conn.cursor()
+    is_pg = hasattr(conn, 'dsn')
+
+    query = '''
+        SELECT month, pm2_5, pm10, precipitation, temp, updated_at
+        FROM seasonal_climatology
+        WHERE zone_id = %s
+        ORDER BY month ASC
+    ''' if is_pg else '''
+        SELECT month, pm2_5, pm10, precipitation, temp, updated_at
+        FROM seasonal_climatology
+        WHERE zone_id = ?
+        ORDER BY month ASC
+    '''
+
+    c.execute(query, (zone_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_monthly_sensor_averages(zone_id):
+    conn = get_connection()
+    c = conn.cursor()
+    is_pg = hasattr(conn, 'dsn')
+
+    if is_pg:
+        query = '''
+            SELECT CAST(EXTRACT(MONTH FROM to_timestamp(timestamp)) AS INTEGER) as month,
+                   AVG(pm2_5) as pm2_5, AVG(pm10) as pm10, COUNT(*) as samples
+            FROM sensor_readings
+            WHERE zone_id = %s
+            GROUP BY 1
+        '''
+    else:
+        query = '''
+            SELECT CAST(strftime('%m', timestamp, 'unixepoch') AS INTEGER) as month,
+                   AVG(pm2_5) as pm2_5, AVG(pm10) as pm10, COUNT(*) as samples
+            FROM sensor_readings
+            WHERE zone_id = ?
+            GROUP BY 1
+        '''
+
+    c.execute(query, (zone_id,))
+    rows = c.fetchall()
+    conn.close()
+    return {row["month"]: dict(row) for row in rows}
 
 def refresh_15m_rollups():
     """

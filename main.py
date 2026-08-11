@@ -51,6 +51,9 @@ async def periodic_updates():
             # Execute rollups synchronously in a thread pool since it's a blocking DB call
             await asyncio.to_thread(refresh_15m_rollups)
 
+            from app.services.seasonal import refresh_stale_climatology
+            await refresh_stale_climatology()
+
         except asyncio.CancelledError:
             break
         except Exception as e:

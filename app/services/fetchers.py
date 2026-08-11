@@ -31,6 +31,7 @@ from typing import Dict, Any, List
 from app.core.config import ZONES, NODES_CONFIG
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
+from app.services.weather import get_zone_weather
 import os
 
 _RAM_CACHE = {}
@@ -913,6 +914,8 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
 
         averages_24h = _calculate_24h_averages(history, zone_type)
 
+        weather = await get_zone_weather(lat, lon, raw_comps.get("pm2_5"))
+
         full_payload = {
             "zone_id": zone_id,
             "zone_name": zone_name,
@@ -923,6 +926,7 @@ async def get_zone_data(zone_id: str, zone_name: str, lat: float, lon: float, zo
             "history": history,
             "warning": warning_msg,
             "nodes": raw_comps.get("nodes"),
+            "weather": weather,
             **aqi_data
         }
 

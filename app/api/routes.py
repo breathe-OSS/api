@@ -30,8 +30,26 @@ from fastapi.responses import StreamingResponse, Response, JSONResponse
 
 from app.core.config import ZONES, SENSOR_INFO
 from app.services.fetchers import get_zone_data
+from app.services.seasonal import get_zone_seasonal
+from app.services.weather import fetch_weather_history
 from app.core.database import stream_historical_data, check_postgres_health
 from app.core.redis_client import check_redis_health
+
+def parse_time(t_str: str) -> int:
+    t_str = t_str.lower()
+    if t_str.endswith('y'):
+        return int(t_str[:-1]) * 365 * 86400
+    if t_str.endswith('mo'):
+        return int(t_str[:-2]) * 30 * 86400
+    if t_str.endswith('w'):
+        return int(t_str[:-1]) * 7 * 86400
+    if t_str.endswith('m'):
+        return int(t_str[:-1]) * 60
+    if t_str.endswith('h'):
+        return int(t_str[:-1]) * 3600
+    if t_str.endswith('d'):
+        return int(t_str[:-1]) * 86400
+    return 86400 # default 1 day
 
 def register_zone_routes(app: FastAPI) -> None:
     @app.get("/health")
@@ -104,6 +122,67 @@ def register_zone_routes(app: FastAPI) -> None:
     async def get_sensors() -> dict:
         return SENSOR_INFO
 
+    @app.get("/seasonal/{zone_id}")
+    async def get_seasonal_route(zone_id: str):
+        if zone_id not in ZONES:
+            raise HTTPException(status_code=404, detail="zone not found")
+
+        cache_key = f"seasonal:{zone_id}"
+        from app.core.redis_client import redis_client
+        if redis_client:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                return Response(
+                    content=cached_data,
+                    media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+
+        payload = await get_zone_seasonal(zone_id)
+
+        if redis_client:
+            try:
+                await redis_client.set(cache_key, json.dumps(payload), ex=21600)
+            except Exception as e:
+                print(f"Redis cache save error: {e}")
+
+        return payload
+
+    @app.get("/weather-history/{zone_id}/{time_range}/{interval}")
+    async def get_weather_history_route(
+        zone_id: str,
+        time_range: str = Path(..., examples=["1w"], description="Time range (e.g., 1d, 7d, 1mo, 1y)"),
+        interval: str = Path(..., examples=["1h"], description="Grouping interval (e.g., 1h, 4h, 1d)")
+    ):
+        if zone_id not in ZONES:
+            raise HTTPException(status_code=404, detail="zone not found")
+
+        cache_key = f"weather:{zone_id}:{time_range}:{interval}"
+        from app.core.redis_client import redis_client
+        if redis_client:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                return Response(
+                    content=cached_data,
+                    media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+
+        z = ZONES[zone_id]
+        time_range_sec = parse_time(time_range)
+        interval_sec = parse_time(interval)
+
+        payload = await fetch_weather_history(z["lat"], z["lon"], time_range_sec, interval_sec)
+        payload["zone_id"] = zone_id
+
+        if redis_client:
+            try:
+                await redis_client.set(cache_key, json.dumps(payload), ex=3600)
+            except Exception as e:
+                print(f"Redis cache save error: {e}")
+
+        return payload
+
     @app.get("/historical-data/{location}/{time_range}/{interval}/{metrics}")
     async def get_historical_data_route(
         location: str = Path(..., examples=["jammu_city"], description="The ID of the zone or 'all'"),
@@ -122,16 +201,6 @@ def register_zone_routes(app: FastAPI) -> None:
                     headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
                     return Response(content=cached_data, media_type="text/csv", headers=headers)
                 return Response(content=cached_data, media_type="application/json", headers=headers)
-
-        def parse_time(t_str: str) -> int:
-            t_str = t_str.lower()
-            if t_str.endswith('y'): return int(t_str[:-1]) * 365 * 86400
-            if t_str.endswith('mo'): return int(t_str[:-2]) * 30 * 86400
-            if t_str.endswith('w'): return int(t_str[:-1]) * 7 * 86400
-            if t_str.endswith('m'): return int(t_str[:-1]) * 60
-            if t_str.endswith('h'): return int(t_str[:-1]) * 3600
-            if t_str.endswith('d'): return int(t_str[:-1]) * 86400
-            return 86400 # default 1 day
 
         time_range_sec = parse_time(time_range)
         interval_sec = parse_time(interval)
