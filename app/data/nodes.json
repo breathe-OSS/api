@@ -108,5 +108,15 @@
         "enabled": true
       }
     ]
+  },
+  "reasi_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 202541,
+        "name": "Reasi Town Centre",
+        "enabled": true
+      }
+    ]
   }
 }

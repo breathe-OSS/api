@@ -154,9 +154,9 @@
   "reasi_town": {
     "id": "reasi_town",
     "name": "Reasi",
-    "provider": "openmeteo",
-    "lat": 33.0800,
-    "lon": 74.8300,
+    "provider": "airgradient",
+    "lat": 33.0800963,
+    "lon": 74.8398673,
     "zone_type": "hills"
   },
   "samba_town": {

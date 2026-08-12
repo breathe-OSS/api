@@ -153,6 +153,17 @@
       "latitude": 32.566932,
       "longitude": 75.019868,
       "installation_date": "20 Jul 2026"
+    },
+    {
+      "name": "Reasi Town Centre",
+      "zone": "Reasi",
+      "location_id": 202541,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 33.0800963,
+      "longitude": 74.8398673,
+      "installation_date": "12 Aug 2026"
     }
   ]
 }
