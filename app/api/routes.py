@@ -23,7 +23,10 @@
 # SOFTWARE.
 
 import asyncio
+import csv
+import io
 import json
+import re
 from typing import Callable, Any, Dict
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse, Response, JSONResponse
@@ -192,13 +195,16 @@ def register_zone_routes(app: FastAPI) -> None:
         format: str = Query("json", examples=["json"], description="Output format (json or csv)")
     ):
         cache_key = f"hist:{location}:{time_range}:{interval}:{metrics}:{format.lower()}"
+        # A zone_id can contain characters that do not belong in a header value,
+        # so the download name is built from a sanitised copy.
+        safe_location = re.sub(r'[^A-Za-z0-9_.-]', '_', location)
         from app.core.redis_client import redis_client
         if redis_client:
             cached_data = await redis_client.get(cache_key)
             if cached_data:
                 headers = {"Cache-Control": "public, max-age=3600"}
                 if format.lower() == "csv":
-                    headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
+                    headers["Content-Disposition"] = f'attachment; filename="historical_{safe_location}.csv"'
                     return Response(content=cached_data, media_type="text/csv", headers=headers)
                 return Response(content=cached_data, media_type="application/json", headers=headers)
 
@@ -261,11 +267,27 @@ def register_zone_routes(app: FastAPI) -> None:
             yield '], "stats": ' + json.dumps(stats) + '}'
             
         def generate_csv():
+            # Written through csv.writer rather than joining on commas, because a
+            # zone_id can legitimately contain one: per sensor rows are stored as
+            # "<zone>_<sensor name>", and a sensor named "Jeelanabad, Batpora"
+            # would otherwise split into an extra column and break every parser
+            # downstream.
             header = ["zone_id", "ts"] + actual_metrics
-            yield ",".join(header) + "\n"
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, lineterminator="\n")
+
+            def drain():
+                line = buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+                return line
+
+            writer.writerow(header)
+            yield drain()
+
             for row in stream_historical_data(location, time_range_sec, interval_sec, metrics_list):
-                vals = [str(row.get(k, '')) for k in header]
-                yield ",".join(vals) + "\n"
+                writer.writerow([row.get(k, '') for k in header])
+                yield drain()
                 
         headers = {
             "Cache-Control": "public, max-age=3600"
@@ -290,7 +312,7 @@ def register_zone_routes(app: FastAPI) -> None:
                 asyncio.run_coroutine_threadsafe(save_to_redis(), loop)
 
         if format.lower() == "csv":
-            headers["Content-Disposition"] = f'attachment; filename="historical_{location}.csv"'
+            headers["Content-Disposition"] = f'attachment; filename="historical_{safe_location}.csv"'
             return StreamingResponse(generate_and_cache(generate_csv()), media_type="text/csv", headers=headers)
         
         return StreamingResponse(generate_and_cache(generate_json()), media_type="application/json", headers=headers)
