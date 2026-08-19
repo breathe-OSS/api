@@ -47,9 +47,10 @@ async def periodic_updates():
             await update_all_zones_background()
 
             # Now that raw data is updated, trigger the continuous aggregation
-            from app.core.database import refresh_15m_rollups
+            from app.core.database import refresh_15m_rollups, refresh_stale_node_offsets
             # Execute rollups synchronously in a thread pool since it's a blocking DB call
             await asyncio.to_thread(refresh_15m_rollups)
+            await asyncio.to_thread(refresh_stale_node_offsets)
 
             from app.services.seasonal import refresh_stale_climatology
             await refresh_stale_climatology()
