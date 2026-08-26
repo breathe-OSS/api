@@ -22,47 +22,69 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# application entry point. wires up sentry, cors and the routes, and owns the
+# background loop that keeps every zone's readings fresh.
+
 import os
 import asyncio
+from contextlib import asynccontextmanager
+
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+
 from app.api.routes import register_zone_routes
+from app.core.redis_client import init_redis_pool, close_redis_pool
 from app.services.fetchers import update_all_zones_background
 
-from app.core.redis_client import init_redis_pool, close_redis_pool
+# how long the background loop sleeps between passes. the airgradient sensors
+# report roughly every fifteen minutes, so polling faster only costs quota.
+UPDATE_INTERVAL_SECONDS = 900
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Open redis and start the update loop on boot, tear both down on shutdown."""
     await init_redis_pool()
     task = asyncio.create_task(periodic_updates())
+
     yield
+
     task.cancel()
     await close_redis_pool()
 
-async def periodic_updates():
+
+async def periodic_updates() -> None:
+    """Refresh every zone, then the derived rollups, forever."""
     while True:
         try:
             await update_all_zones_background()
 
-            # Now that raw data is updated, trigger the continuous aggregation
+            # these are imported here rather than at module scope because both
+            # modules import from app.core, and pulling them in at the top would
+            # close an import cycle.
             from app.core.database import refresh_15m_rollups, refresh_stale_node_offsets
-            # Execute rollups synchronously in a thread pool since it's a blocking DB call
+            from app.services.seasonal import refresh_stale_climatology
+
+            # the rollups are blocking sqlite work, so they go to a worker thread
+            # instead of stalling the event loop for everyone else.
             await asyncio.to_thread(refresh_15m_rollups)
             await asyncio.to_thread(refresh_stale_node_offsets)
 
-            from app.services.seasonal import refresh_stale_climatology
             await refresh_stale_climatology()
 
         except asyncio.CancelledError:
+            # raised when lifespan cancels us on shutdown. this is the one
+            # exception we must not swallow, or the process will not exit.
             break
+
         except Exception as e:
+            # anything else is a bad pass, not a reason to stop polling.
             sentry_sdk.capture_exception(e)
             print(f"CRITICAL: Background loop error: {e}")
 
-        # Wait 15 minutes
-        await asyncio.sleep(900)
+        await asyncio.sleep(UPDATE_INTERVAL_SECONDS)
+
 
 sentry_dsn = os.getenv("SENTRY_DSN")
 if sentry_dsn:
@@ -83,7 +105,7 @@ app.add_middleware(
         "https://www.breatheoss.app",
         "http://localhost:3000",
         "http://localhost:8080",
-        "https://claude.ai"
+        "https://claude.ai",
     ],
     allow_credentials=True,
     allow_methods=["*"],

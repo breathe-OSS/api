@@ -22,22 +22,28 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# loads the static json under app/data once at import time. these files are small
+# and change only with a deploy, so there is no reason to read them per request.
+
 import os
 import json
+from typing import Any, Dict
+
 from dotenv import load_dotenv
-from typing import Dict, Any
 
 load_dotenv()
 
 _data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
+
 def _load_json(fname: str) -> Dict[str, Any]:
-    p = os.path.join(_data_dir, fname)
-    with open(p, "r") as f:
-        return json.load(f)
+    """Read one json file out of app/data and return it as a dict."""
+    path = os.path.join(_data_dir, fname)
+    with open(path, "r") as handle:
+        return json.load(handle)
+
 
 ZONES = _load_json("zones.json")
 AQI_BREAKPOINTS = _load_json("aqi_breakpoints.json")
 NODES_CONFIG = _load_json("nodes.json")
 SENSOR_INFO = _load_json("sensor_info.json")
-
