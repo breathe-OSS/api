@@ -58,7 +58,7 @@
   "kargil_town": {
     "id": "kargil_town",
     "name": "Kargil",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 34.5539,
     "lon": 76.1349,
     "zone_type": "hills"

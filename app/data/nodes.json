@@ -118,5 +118,15 @@
         "enabled": true
       }
     ]
+  },
+  "kargil_town": {
+    "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 205956,
+        "name": "Central Kargil",
+        "enabled": true
+      }
+    ]
   }
 }
