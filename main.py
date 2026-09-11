@@ -103,6 +103,7 @@ app.add_middleware(
     allow_origins=[
         "https://breatheoss.app",
         "https://www.breatheoss.app",
+        "https://about.breatheoss.app",
         "http://localhost:3000",
         "http://localhost:8080",
         "https://claude.ai",
