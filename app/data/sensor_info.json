@@ -14,13 +14,13 @@
     {
       "name": "Bemina",
       "zone": "Srinagar",
-      "location_id": 170398,
+      "location_id": 207718,
       "provider": "AirGradient",
-      "model": "0-1PST",
+      "model": "O-M-1PPST-CE",
       "is_kit": false,
-      "latitude": 34.07023554237501,
-      "longitude": 74.77548492160591,
-      "installation_date": "May 24, 2025"
+      "latitude": 34.07031,
+      "longitude": 74.77562,
+      "installation_date": "Sep 16, 2026"
     },
     {
       "name": "Hazratbal",
