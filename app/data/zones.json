@@ -34,7 +34,7 @@
   "ganderbal_town": {
     "id": "ganderbal_town",
     "name": "Ganderbal",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 34.2164,
     "lon": 74.7786,
     "zone_type": "hills"

@@ -175,6 +175,17 @@
       "latitude": 34.55897462058039,
       "longitude": 76.12613928874369,
       "installation_date": "30 Aug 2026"
+    },
+    {
+      "name": "Cherwan",
+      "zone": "Ganderbal",
+      "location_id": 209677,
+      "provider": "AirGradient",
+      "model": "O-1PST",
+      "is_kit": false,
+      "latitude": 34.2458,
+      "longitude": 74.9386,
+      "installation_date": "Oct 4, 2026"
     }
   ]
 }

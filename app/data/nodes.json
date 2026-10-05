@@ -128,5 +128,15 @@
         "enabled": true
       }
     ]
+  },
+  "ganderbal_town": {
+    "token_env_var": "AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 209677,
+        "name": "Cherwan",
+        "enabled": true
+      }
+    ]
   }
 }
