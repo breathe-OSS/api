@@ -25,7 +25,8 @@
       {
         "location_id": 210415,
         "name": "Brein Nishat",
-        "enabled": true
+        "enabled": true,
+        "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN"
       }
     ]
   },

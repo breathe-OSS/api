@@ -546,6 +546,17 @@ async def fetch_airgradient_common(
     return {"current_comps": current_comps, "history": history}
 
 
+def _resolve_node_token(
+    node_cfg: Dict[str, Any], zone_token: Optional[str]
+) -> Optional[str]:
+    node_env = node_cfg.get("token_env_var")
+    if node_env:
+        if "PUBLIC" in node_env.upper():
+            return "PUBLIC_TOKEN"
+        return os.getenv(node_env) or zone_token
+    return zone_token
+
+
 async def fetch_multi_node_airgradient(
     zone_id: str,
     nodes: List[Dict],
@@ -566,15 +577,23 @@ async def fetch_multi_node_airgradient(
 
     async with httpx.AsyncClient(timeout=20) as client:
         curr_tasks = []
+        world_task = None
+
         for node in nodes:
-            if token == "PUBLIC_TOKEN":
-                url = f"{AG_BASE_URL}/world/locations/measures/current"
+            node_token = _resolve_node_token(node, token)
+            if node_token == "PUBLIC_TOKEN":
+                if world_task is None:
+                    world_task = asyncio.create_task(
+                        client.get(f"{AG_BASE_URL}/world/locations/measures/current")
+                    )
+                curr_tasks.append(world_task)
             else:
-                url = (
-                    f"{AG_BASE_URL}/locations/{node['location_id']}"
-                    f"/measures/current?token={token}"
+                curr_tasks.append(
+                    client.get(
+                        f"{AG_BASE_URL}/locations/{node['location_id']}"
+                        f"/measures/current?token={node_token}"
+                    )
                 )
-            curr_tasks.append(client.get(url))
 
         om_params = {"latitude": lat, "longitude": lon, **OM_GAS_PARAMS}
         curr_tasks.append(client.get(AIR_QUALITY_URL, params=om_params))
@@ -618,7 +637,8 @@ async def fetch_multi_node_airgradient(
 
         data = resp.json()
 
-        if token == "PUBLIC_TOKEN" and isinstance(data, list):
+        node_token = _resolve_node_token(node_cfg, token)
+        if node_token == "PUBLIC_TOKEN" and isinstance(data, list):
             sensor_data = next(
                 (s for s in data if s.get("locationId") == node_cfg["location_id"]), None
             )
@@ -992,10 +1012,11 @@ async def get_zone_data(
 
                         else:
                             config = nodes[0]
+                            node_token = _resolve_node_token(config, token)
                             fetched_data = await fetch_airgradient_common(
                                 zone_id=zone_id,
                                 loc_id=config["location_id"],
-                                token=token,
+                                token=node_token,
                                 lat=lat,
                                 lon=lon,
                                 zone_type=zone_type,
