@@ -21,6 +21,11 @@
         "location_id": 199426,
         "name": "Jeelanabad, Batpora",
         "enabled": true
+      },
+      {
+        "location_id": 210415,
+        "name": "Brein Nishat",
+        "enabled": true
       }
     ]
   },

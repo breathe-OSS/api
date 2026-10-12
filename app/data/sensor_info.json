@@ -45,6 +45,18 @@
       "installation_date": "10 Aug, 2026"
     },
     {
+      "name": "Brein Nishat",
+      "zone": "Srinagar",
+      "location_id": 210415,
+      "provider": "AirGradient, Thanks [Haider](https://www.haideralipunjabi.com/)",
+      "provider_url": "https://www.haideralipunjabi.com/",
+      "model": "O-1PST",
+      "is_kit": true,
+      "latitude": 34.1161,
+      "longitude": 74.88624,
+      "installation_date": "Oct 12, 2026"
+    },
+    {
       "name": "Talab Tillo",
       "zone": "Jammu",
       "location_id": 182171,
