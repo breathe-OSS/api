@@ -89,6 +89,17 @@
       "installation_date": "Jun 13, 2026"
     },
     {
+      "name": "Suchetgarh, RS Pura",
+      "zone": "Jammu",
+      "location_id": 210604,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 32.5721,
+      "longitude": 74.6686,
+      "installation_date": "Oct 13, 2026"
+    },
+    {
       "name": "Gujjar Mandi",
       "zone": "Rajouri",
       "location_id": 184149,

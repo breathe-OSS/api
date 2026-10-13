@@ -47,6 +47,11 @@
         "location_id": 195730,
         "name": "Channi Himmat",
         "enabled": true
+      },
+      {
+        "location_id": 210604,
+        "name": "Suchetgarh, RS Pura",
+        "enabled": true
       }
     ]
   },
