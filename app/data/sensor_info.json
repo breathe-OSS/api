@@ -56,6 +56,17 @@
       "installation_date": "Oct 12, 2026"
     },
     {
+      "name": "Ahmadnagar",
+      "zone": "Srinagar",
+      "location_id": 211204,
+      "provider": "AirGradient",
+      "model": "O-1P",
+      "is_kit": true,
+      "latitude": 34.1661,
+      "longitude": 74.806044,
+      "installation_date": "Oct 17, 2026"
+    },
+    {
       "name": "Talab Tillo",
       "zone": "Jammu",
       "location_id": 182171,
@@ -208,6 +219,17 @@
       "latitude": 34.2458,
       "longitude": 74.9386,
       "installation_date": "Oct 4, 2026"
+    },
+    {
+      "name": "Billawar, Kathua",
+      "zone": "Kathua",
+      "location_id": 211219,
+      "provider": "AirGradient",
+      "model": "O-1PST",
+      "is_kit": false,
+      "latitude": 32.6148,
+      "longitude": 75.6033,
+      "installation_date": "Oct 17, 2026"
     }
   ]
 }

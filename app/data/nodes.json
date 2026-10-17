@@ -27,6 +27,11 @@
         "name": "Brein Nishat",
         "enabled": true,
         "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN"
+      },
+      {
+        "location_id": 211204,
+        "name": "Ahmadnagar",
+        "enabled": true
       }
     ]
   },
@@ -146,6 +151,16 @@
       {
         "location_id": 209677,
         "name": "Cherwan",
+        "enabled": true
+      }
+    ]
+  },
+  "kathua_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 211219,
+        "name": "Billawar, Kathua",
         "enabled": true
       }
     ]

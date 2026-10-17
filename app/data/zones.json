@@ -74,7 +74,7 @@
   "kathua_town": {
     "id": "kathua_town",
     "name": "Kathua",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 32.3670,
     "lon": 75.5230,
     "zone_type": "industrial"
