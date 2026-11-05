@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from fastapi import HTTPException
 
-from app.core.config import ZONES, NODES_CONFIG
+from app.core.config import ZONES, NODES_CONFIG, FESTIVALS
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
 from app.services.weather import get_zone_weather
@@ -94,6 +94,31 @@ def _get_warn_aqi_jump(current_ts: Optional[float] = None) -> float:
     """Return the AQI 1-hour jump threshold for advisory warnings based on month."""
     month = datetime.fromtimestamp(current_ts).month if current_ts else datetime.now().month
     return WARN_AQI_JUMP_COLD if month in COLD_SEASON_MONTHS else WARN_AQI_JUMP_DEFAULT
+
+
+# festival dates where firecracker emissions cause actually real extreme spikes.
+# during these windows, the 1 hour jump checks are bypassed and ceilings are raised
+# to the hardware limit of the PM sensor.
+_FESTIVAL_DATES = {
+    date_str
+    for dates in FESTIVALS.get("diwali_windows", {}).values()
+    for date_str in dates
+}
+FESTIVAL_PM25_CEILING = 999
+FESTIVAL_PM10_CEILING = 999
+
+
+def is_festival_window(ts: Optional[float] = None) -> bool:
+    """Return True if the timestamp falls on a festival date."""
+    dt = datetime.fromtimestamp(ts) if ts else datetime.now()
+    return dt.strftime("%Y-%m-%d") in _FESTIVAL_DATES
+
+
+def _get_spike_ceilings(ts: Optional[float] = None) -> Tuple[float, float]:
+    """Return (pm25_ceiling, pm10_ceiling) based on whether it is a festival day."""
+    if is_festival_window(ts):
+        return FESTIVAL_PM25_CEILING, FESTIVAL_PM10_CEILING
+    return SPIKE_PM25_CEILING, SPIKE_PM10_CEILING
 
 # gases come from open-meteo rather than the sensors, which measure particulates
 # only.
@@ -193,6 +218,8 @@ def _is_jump_spike(
     Callers that already hold the last day of readings pass them in, since this
     runs once per node and the fetch is not free.
     """
+    if is_festival_window(reading_ts):
+        return None
     if history_24h is None:
         history_24h = database.get_history(node_zone_id, hours=24)
 
@@ -493,7 +520,8 @@ async def fetch_airgradient_common(
             pm25_val = float(pm25)
             pm10_val = float(pm10) if pm10 is not None else 0.0
 
-            if pm25_val > SPIKE_PM25_CEILING or pm10_val > SPIKE_PM10_CEILING:
+            pm25_ceil, pm10_ceil = _get_spike_ceilings(reading_ts)
+            if pm25_val > pm25_ceil or pm10_val > pm10_ceil:
                 spike_warning = (
                     f"{node_name}: absolute threshold exceeded "
                     f"(PM2.5={pm25_val:.0f} or PM10={pm10_val:.0f})"
@@ -703,7 +731,8 @@ async def fetch_multi_node_airgradient(
         pm25_val = pm25
         pm10_val = pm10 if pm10 else 0.0
 
-        if pm25_val > SPIKE_PM25_CEILING or pm10_val > SPIKE_PM10_CEILING:
+        pm25_ceil, pm10_ceil = _get_spike_ceilings(reading_ts)
+        if pm25_val > pm25_ceil or pm10_val > pm10_ceil:
             node_statuses.append({
                 "node": node_name,
                 "status": "spike_detected",
@@ -1114,7 +1143,8 @@ async def get_zone_data(
         pm25_val = raw_comps.get("pm2_5", 0)
         pm10_val = raw_comps.get("pm10", 0)
 
-        if pm25_val > SPIKE_PM25_CEILING or pm10_val > SPIKE_PM10_CEILING:
+        pm25_ceil, pm10_ceil = _get_spike_ceilings(current_time)
+        if pm25_val > pm25_ceil or pm10_val > pm10_ceil:
             warning_msg = WARNING_TEXT
 
         def get_past_aqi(target_ts, history_list, tolerance=1800):
