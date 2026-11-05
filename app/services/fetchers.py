@@ -98,6 +98,14 @@ WARNING_TEXT = (
 )
 
 
+class SpikeProtectionError(ValueError):
+    """Raised when nodes are excluded due to spike protection rather than being offline."""
+
+    def __init__(self, message: str, spike_warning: str):
+        super().__init__(message)
+        self.spike_warning = spike_warning
+
+
 def _extract_openmeteo_gases(om_resp: Any) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
     """Pull hourly gas points and a current value per gas out of an open-meteo reply.
 
@@ -541,7 +549,8 @@ async def fetch_airgradient_common(
         current_comps["nodes"] = {}
         current_comps["_node_count"] = 0
         current_comps["_total_nodes"] = 1
-        current_comps["_node_statuses"] = [{"node": node_name, "status": "offline"}]
+        status_val = "spike_detected" if spike_warning else "offline"
+        current_comps["_node_statuses"] = [{"node": node_name, "status": status_val}]
 
     return {"current_comps": current_comps, "history": history}
 
@@ -720,7 +729,12 @@ async def fetch_multi_node_airgradient(
 
     # caught by get_zone_data, which falls the zone back to open-meteo.
     if not valid_readings:
-        raise ValueError(f"All {len(nodes)} sensor nodes offline or showing spikes")
+        if spike_warnings:
+            raise SpikeProtectionError(
+                f"All {len(nodes)} sensor nodes excluded due to spikes",
+                "; ".join(spike_warnings),
+            )
+        raise ValueError(f"All {len(nodes)} sensor nodes offline")
 
     database.save_readings([
         {
@@ -1040,14 +1054,27 @@ async def get_zone_data(
                                     f"Sensor data is stale ({int(data_age / 60)} minutes old)"
                                 )
 
+                    except SpikeProtectionError as e:
+                        print(f"Spike protection active for {zone_id}: {e}, falling back to Open-Meteo")
+                        fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
+                        source_name = "openmeteo air pollution api"
+                        sensor_offline_warning = (
+                            f"{e.spike_warning}. Using satellite-based estimates from Open-Meteo."
+                        )
+
                     except Exception as e:
                         print(f"Sensor offline for {zone_id}: {e}, falling back to Open-Meteo")
                         fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
                         source_name = "openmeteo air pollution api"
-                        sensor_offline_warning = (
-                            "Physical sensor temporarily offline. Using "
-                            "satellite-based estimates from Open-Meteo."
-                        )
+                        if sensor_offline_warning:
+                            sensor_offline_warning = (
+                                f"{sensor_offline_warning}. Using satellite-based estimates from Open-Meteo."
+                            )
+                        else:
+                            sensor_offline_warning = (
+                                "Physical sensor temporarily offline. Using "
+                                "satellite-based estimates from Open-Meteo."
+                            )
 
         else:
             fetched_data = await fetch_openmeteo_live(lat, lon, zone_type)
