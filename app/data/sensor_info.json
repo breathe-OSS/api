@@ -111,17 +111,6 @@
       "installation_date": "Oct 13, 2026"
     },
     {
-      "name": "Gujjar Mandi",
-      "zone": "Rajouri",
-      "location_id": 184149,
-      "provider": "AirGradient",
-      "model": "0-1PST",
-      "is_kit": true,
-      "latitude": 33.380775,
-      "longitude": 74.314353,
-      "installation_date": "Feb 5, 2026"
-    },
-    {
       "name": "Nowshera",
       "zone": "Rajouri",
       "location_id": 197953,
