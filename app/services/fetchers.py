@@ -65,15 +65,35 @@ MAX_READING_AGE = 3600
 SPIKE_PM25_CEILING = 650
 SPIKE_PM10_CEILING = 600
 
+# cold/heating months where temperature inversions and evening heating
+# smoke cause genuine rapid rises in particulates.
+COLD_SEASON_MONTHS = {10, 11, 12, 1, 2}  # October through February
+
 # a jump this large inside an hour is local interference rather than weather.
-SPIKE_PM25_JUMP = 200
+SPIKE_PM25_JUMP_DEFAULT = 200
+SPIKE_PM25_JUMP_COLD = 300
+SPIKE_PM25_JUMP = SPIKE_PM25_JUMP_DEFAULT
 
 # how far from exactly one hour ago a stored reading may sit and still be used
 # as the comparison point for that jump.
 SPIKE_LOOKBACK_TOLERANCE = 5400
 
 # the index moving this far in an hour gets a warning attached to the payload.
-WARN_AQI_JUMP = 150
+WARN_AQI_JUMP_DEFAULT = 150
+WARN_AQI_JUMP_COLD = 200
+WARN_AQI_JUMP = WARN_AQI_JUMP_DEFAULT
+
+
+def _get_spike_pm25_jump(reading_ts: Optional[float] = None) -> float:
+    """Return the PM2.5 1-hour jump threshold based on the month of the reading."""
+    month = datetime.fromtimestamp(reading_ts).month if reading_ts else datetime.now().month
+    return SPIKE_PM25_JUMP_COLD if month in COLD_SEASON_MONTHS else SPIKE_PM25_JUMP_DEFAULT
+
+
+def _get_warn_aqi_jump(current_ts: Optional[float] = None) -> float:
+    """Return the AQI 1-hour jump threshold for advisory warnings based on month."""
+    month = datetime.fromtimestamp(current_ts).month if current_ts else datetime.now().month
+    return WARN_AQI_JUMP_COLD if month in COLD_SEASON_MONTHS else WARN_AQI_JUMP_DEFAULT
 
 # gases come from open-meteo rather than the sensors, which measure particulates
 # only.
@@ -188,7 +208,8 @@ def _is_jump_spike(
         return None
 
     pm25_jump = pm25_val - closest_reading["pm2_5"]
-    if pm25_jump > SPIKE_PM25_JUMP:
+    spike_jump_limit = _get_spike_pm25_jump(reading_ts)
+    if pm25_jump > spike_jump_limit:
         return pm25_jump
 
     return None
@@ -1107,7 +1128,8 @@ async def get_zone_data(
             val_1h = get_past_aqi(current_time - 3600, history)
 
             if val_1h is not None and not warning_msg:
-                if (current_aqi - val_1h) > WARN_AQI_JUMP:
+                warn_jump_limit = _get_warn_aqi_jump(current_time)
+                if (current_aqi - val_1h) > warn_jump_limit:
                     warning_msg = WARNING_TEXT
 
         # the offline notice goes first, since it explains where the numbers
