@@ -62,8 +62,8 @@ MAX_READING_AGE = 3600
 
 # absolute ceilings. a real reading in these zones does not reach them, so
 # anything above is the sensor being blown on, sprayed, or on fire.
-SPIKE_PM25_CEILING = 650
-SPIKE_PM10_CEILING = 600
+SPIKE_PM25_CEILING = 600
+SPIKE_PM10_CEILING = 900
 
 # cold/heating months where temperature inversions and evening heating
 # smoke cause genuine rapid rises in particulates.
