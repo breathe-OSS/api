@@ -53,17 +53,19 @@ api/
     ├── api/                    # Routes & endpoints
     │   ├── __init__.py
     │   └── routes.py
-    ├── core/                   # Config, database, conversions
+    ├── core/                   # Config, database, cache, conversions
     │   ├── __init__.py
     │   ├── config.py
     │   ├── database.py
-    │   └── conversions.py
+    │   ├── conversions.py
+    │   └── redis_client.py
     ├── data/                   # Static JSON data files
     │   ├── __init__.py
     │   ├── zones.json
     │   ├── nodes.json          # AirGradient node configurations
     │   ├── sensor_info.json    # Hardware sensor metadata
-    │   └── aqi_breakpoints.json
+    │   ├── aqi_breakpoints.json
+    │   └── festivals.json      # Festival dates for spike protection
     └── services/               # Data fetching & processing
         ├── __init__.py
         ├── fetchers.py
@@ -73,15 +75,17 @@ api/
 
 ## Main modules
 - `main.py`
-  Initializes the FastAPI application and starts a background scheduler. This scheduler runs every 15 minutes to fetch fresh data for all zones, ensuring the app serves cached data instantly without hitting API rate limits during user requests.
+  Initializes the FastAPI application and starts a background scheduler. This scheduler runs every 15 minutes to fetch fresh data for all zones, ensuring the app serves cached data instantly without hitting API rate limits during user requests. It also opens the Redis connection pool, and enables Sentry error reporting when `SENTRY_DSN` is set.
 - `app/api/routes.py`
   Generates all `/aqi/<zone_id>` endpoints dynamically based on `zones.json`.
 - `app/core/database.py`
-  Handles data persistence using **PostgreSQL** (production) or **SQLite** (local development). Stores sensor readings, temperature, and humidity for historical graph plotting. Also handles Continuous Aggregations (15-minute rollups) via `refresh_15m_rollups` to serve historical queries with high performance.
+  Handles data persistence using **PostgreSQL** (production) or **SQLite** (local development). Stores sensor readings, temperature, and humidity for historical graph plotting. Also handles Continuous Aggregations (15-minute rollups) via `refresh_15m_rollups` to serve historical queries with high performance. Also stores per-node offsets (`node_offsets`), recomputed daily. `/historical-data` uses them to correct multi-sensor zones, so the series doesn't jump when a sensor joins or drops out.
 - `app/core/config.py`
-  Loads environment variables and configuration from `zones.json`, `nodes.json`, and `aqi_breakpoints.json`.
+  Loads environment variables and configuration from `zones.json`, `nodes.json`, `sensor_info.json`, `aqi_breakpoints.json`, and `festivals.json`.
 - `app/core/conversions.py`
   Handles the mathematics of AQI calculation, unit conversions (e.g., CO from µg/m³ to mg/m³), and Indian CPCB sub-index mapping along with US EPA sub-index mapping.
+- `app/core/redis_client.py`
+  Manages the Redis connection pool used to cache the `/seasonal`, `/weather-history`, and `/historical-data` responses, and provides the Redis health check.
 - `app/services/fetchers.py`
    Contains sophisticated data fetching logic:
    - `fetch_openmeteo_live`: Queries satellite-based pollutant data.
@@ -90,15 +94,17 @@ api/
 - `app/services/seasonal.py`
   Builds per-zone monthly climatology (average PM2.5, PM10, rainfall, and temperature per calendar month) by backfilling ~4 years of Open-Meteo reanalysis data. Refreshed automatically every 30 days by the background scheduler. Powers the `/seasonal/<zone_id>` endpoint so clients can show how pollution typically behaves across winter, monsoon, and summer.
 - `app/services/weather.py`
-  Fetches the live weather condition per zone and classifies it (`rain`, `snow`, `fog`, `smog`, `clear`, `cloudy`). Fog with high PM2.5 is reported as smog. Generates a season-aware informational text included in the `/aqi/<zone_id>` payload under `weather`. Also serves condition-tagged historical buckets for the `/weather-history` endpoint so clients can filter AQI history by weather.
+  Fetches the live weather condition per zone and classifies it (`thunderstorm`, `rain`, `snow`, `fog`, `smog`, `clear`, `cloudy`). Fog with high PM2.5 is reported as smog. Generates a season-aware informational text included in the `/aqi/<zone_id>` payload under `weather`. Also serves condition-tagged historical buckets for the `/weather-history` endpoint so clients can filter AQI history by weather.
 - `app/data/zones.json`
-  Contains zone definitions including names, coordinates, and `zone_type` (`hills`, `urban`, `industrial`) for customized AQI calculation.
+  Contains zone definitions including names, coordinates, and `zone_type` (`hills`, `urban`, `industrial`). `zone_type` is returned to clients as `zone_applied`, but it doesn't currently change the AQI calculation.
 - `app/data/nodes.json`
   Maps specific zones to their physical sensor configurations (`location_id`) and dynamic API token environment variables (`token_env_var`).
 - `app/data/sensor_info.json`
   Stores hardware-specific metadata for ground sensors (model, coordinates, installation dates).
 - `app/data/aqi_breakpoints.json`
   Official Indian AQI breakpoint tables.
+- `app/data/festivals.json`
+  Diwali dates for each year. On these days the 1-hour spike checks are skipped, and the PM ceilings are raised to the sensor's hardware limit, so that real firecracker spikes aren't filtered out.
 
 ## Requirements
 - python ≥ 3.10
@@ -107,17 +113,24 @@ api/
 - python-dotenv
 - uvicorn
 - psycopg2-binary (for Postgres support)
+- redis
+- sentry-sdk
+- A running Redis server
 
 ## Environment Variables
 ```
 AIRGRADIENT_TOKEN=yourkeyhere
 JAMMU_AIRGRADIENT_TOKEN=yourkeyhere
 DATABASE_URL=postgres://... (optional, defaults to local sqlite)
+UPSTASH_REDIS_URL=redis://... (optional, defaults to redis://localhost:6379)
+SENTRY_DSN=... (optional, enables Sentry error reporting)
 ```
 
 ## Running
 From the `api` directory:
 `uvicorn main:app --reload`
+
+Redis must be reachable. Without it, `/seasonal`, `/weather-history`, and `/historical-data` return errors.
 
 ## Endpoints
 - **Zone Data**: Access data for a specific zone using its dynamic ID (e.g., `srinagar`, `jammu_city`, `leh`):
@@ -132,9 +145,13 @@ From the `api` directory:
 - **Hardware Sensor Metadata**:
   `GET /sensor-info`
 
+- **Health Check**:
+  `GET /health`
+  Reports whether the database and Redis are reachable. Returns `503` with `"status": "degraded"` if either is down.
+
 - **Seasonal Climatology**:
   `GET /seasonal/{zone_id}`
-  Returns 12 monthly entries with typical PM2.5, PM10, AQI, rainfall (mm), and temperature for the zone, plus the current month and season label. Backed by Open-Meteo reanalysis (2022 to present) and blended with ground sensor monthly averages where enough samples exist.
+  Returns 12 monthly entries with typical PM2.5, PM10, AQI, rainfall (mm), and temperature for the zone, plus the current month and season label. Backed by Open-Meteo reanalysis (2022 to present). If a month has at least 200 ground sensor readings, its entry also includes the sensor averages (`sensor_pm2_5`, `sensor_pm10`). These sit alongside the reanalysis values rather than being blended into them.
 
 - **Weather History**:
   `GET /weather-history/{zone_id}/{time_range}/{interval}`
@@ -142,13 +159,13 @@ From the `api` directory:
 
 - **Historical Data**:
   `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`
-  Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu-city/30d/15m/pm2.5,pm10?format=json`
+  Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu_city/30d/15m/pm2.5,pm10?format=json`
 
 ## Development
 The project is designed to be data-driven. Adding or modifying zones (e.g., converting a zone from satellite to physical AirGradient sensors) does not require changing Python code:
 
 1. **Update `zones.json`**: Change the zone's `provider` (e.g., from `"openmeteo"` to `"airgradient"`).
-2. **Update `nodes.json`**: Map the `zone_id` to its AirGradient API token environment variable (`token_env_var`) and list of physical sensor location IDs.
+2. **Update `nodes.json`**: Map the `zone_id` to its AirGradient API token environment variable (`token_env_var`) and list of physical sensor location IDs. A `token_env_var` containing `PUBLIC` (e.g. `PUBLIC_AIRGRADIENT_TOKEN`) reads the node from AirGradient's public feed, which needs no token.
 3. **Update `sensor_info.json`**: Add the physical sensor metadata to expose it correctly on frontend maps.
 
 Similarly, if government standards change, updating `aqi_breakpoints.json` will instantly update the calculation logic across the entire application.
