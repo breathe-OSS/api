@@ -151,10 +151,10 @@ def get_us_aqi(pollutant: str, conc: float) -> Optional[int]:
         if c_low <= conc <= c_high:
             return linear_interpolate(conc, (c_low, c_high, i_low, i_high))
 
-    # off the top of the table. the index is capped rather than extrapolated.
+    # linearly extrapolate beyond 500
     last_bp = bps[-1]
     if conc > last_bp[1]:
-        return 500
+        return linear_interpolate(conc, last_bp)
 
     return None
 
@@ -173,8 +173,9 @@ def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
         if c_low <= conc <= c_high:
             return linear_interpolate(conc, (c_low, c_high, i_low, i_high))
 
-    if conc > bps[-1][1]:
-        return 500
+    last_bp = bps[-1]
+    if conc > last_bp[1]:
+        return linear_interpolate(conc, last_bp)
 
     # worth knowing: the cpcb rows are integers and do not touch either, pm2.5
     # runs [0, 30] then [31, 60]. a daily mean of 30.4 matches no row and falls
