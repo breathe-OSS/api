@@ -126,6 +126,10 @@ From the `api` directory:
 - **Generic Lookup**:
   `GET /aqi/zone/{zone_id}`
 
+- **Many Zones at Once**:
+  `GET /aqi/zones?ids=srinagar,leh`
+  The same payload as the generic lookup for every zone in `ids`, or for all zones when `ids` is left out, as `{"zones": [...]}`. Zones that fail are left out of the list.
+
 - **List All Zones**:
   `GET /zones`
 
