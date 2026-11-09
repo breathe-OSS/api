@@ -165,6 +165,11 @@ def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
 
     bps = AQI_BREAKPOINTS[pollutant]
 
+    if pollutant == "co":
+        conc = math.floor(conc * 10) / 10
+    else:
+        conc = int(conc)
+
     if conc < bps[0][0]:
         return 0
 
@@ -176,10 +181,6 @@ def get_single_pollutant_aqi(pollutant: str, conc: float) -> Optional[int]:
     if conc > last_bp[1]:
         return linear_interpolate(conc, last_bp)
 
-    # worth knowing: the cpcb rows are integers and do not touch either, pm2.5
-    # runs [0, 30] then [31, 60]. a daily mean of 30.4 matches no row and falls
-    # through to here, so the index comes back missing rather than wrong. the
-    # us path above avoids this by truncating first.
     return None
 
 
