@@ -32,6 +32,7 @@ from contextlib import asynccontextmanager
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.routes import register_zone_routes
 from app.core.redis_client import init_redis_pool, close_redis_pool
@@ -112,5 +113,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# the json is mostly repeated keys and numbers, it shrinks to a fraction over
+# the wire. tiny answers aren't worth the cpu
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 register_zone_routes(app)
