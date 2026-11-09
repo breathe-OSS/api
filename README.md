@@ -138,14 +138,14 @@ From the `api` directory:
 
 - **Weather History**:
   `GET /weather-history/{zone_id}/{time_range}/{interval}`
-  Returns time buckets tagged with a weather condition (`rain`, `snow`, `fog`, `thunderstorm`, `clear`, `cloudy`) and precipitation totals, aligned with `/historical-data` bucketing so clients can filter AQI history by weather. Example: `/weather-history/srinagar/1w/1h`
+  Returns time buckets tagged with a weather condition (`rain`, `snow`, `fog`, `thunderstorm`, `clear`, `cloudy`) and precipitation totals, aligned with `/historical-data` bucketing so clients can filter AQI history by weather. Example: `/weather-history/srinagar/1w/1h`. Also takes the calendar windows described below. Buckets start at `anchor + n * interval`, and `anchor` is `0` for rolling ranges.
 
 - **Historical Data**:
   `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`
   Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu-city/30d/15m/pm2.5,pm10?format=json`
 
 - **Calendar Windows**:
-  `time_range` on `/historical-data` also takes a fixed window instead of a rolling duration. Dates are read in IST, buckets are counted from the start of the window, and a malformed or backwards window returns `400`.
+  `time_range` on `/historical-data` and `/weather-history` also takes a fixed window instead of a rolling duration. Dates are read in IST, buckets are counted from the start of the window, and a malformed or backwards window returns `400`.
   - Month: `2026-10`
   - ISO week (Monday to Sunday): `2026-W42`
   - Day: `2026-10-15`

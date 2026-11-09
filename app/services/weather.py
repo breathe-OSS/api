@@ -31,7 +31,7 @@
 import time
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
@@ -182,13 +182,28 @@ async def fetch_weather_history(
     lon: float,
     time_range_sec: int,
     interval_sec: int,
+    window: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, Any]:
-    """Hourly weather over a window, bucketed to match a readings chart."""
+    """Hourly weather over a window, bucketed to match a readings chart.
+
+    A calendar window, given as unix start and exclusive end, replaces the
+    rolling range. Its buckets are counted from its start, and the payload
+    returns that start as the anchor so clients can line readings up with them.
+    """
     # finer than hourly is pointless, open-meteo has nothing to fill it with.
     interval_sec = max(interval_sec, 3600)
 
     now_ts = time.time()
-    start_ts = now_ts - time_range_sec
+
+    if window is None:
+        anchor = 0
+        start_ts = now_ts - time_range_sec
+        end_ts = now_ts
+    else:
+        anchor, end_ts = window
+        start_ts = anchor
+        end_ts = min(end_ts, now_ts)
+        time_range_sec = max(int(now_ts - start_ts), 0)
 
     # two extra days of slack so the first bucket is never half empty.
     past_days = min(int(time_range_sec // 86400) + 2, 92)
@@ -221,8 +236,11 @@ async def fetch_weather_history(
                         "longitude": lon,
                         "hourly": "weather_code,precipitation",
                         "start_date": datetime.fromtimestamp(start_ts).strftime("%Y-%m-%d"),
-                        "end_date": (
-                            datetime.now() - timedelta(days=ARCHIVE_LAG_DAYS)
+                        "end_date": datetime.fromtimestamp(
+                            min(
+                                end_ts,
+                                (datetime.now() - timedelta(days=ARCHIVE_LAG_DAYS)).timestamp(),
+                            )
                         ).strftime("%Y-%m-%d"),
                         "timezone": "auto",
                         "timeformat": "unixtime",
@@ -245,7 +263,7 @@ async def fetch_weather_history(
         precip = hourly.get("precipitation", [])
 
         for i, t in enumerate(times):
-            if t < start_ts or t > now_ts:
+            if t < start_ts or t >= end_ts:
                 continue
 
             code = codes[i] if i < len(codes) else None
@@ -261,7 +279,7 @@ async def fetch_weather_history(
     # how many hours fell into each condition.
     buckets = {}
     for t, h in hours.items():
-        bucket_ts = int(t // interval_sec) * interval_sec
+        bucket_ts = anchor + int((t - anchor) // interval_sec) * interval_sec
 
         b = buckets.setdefault(bucket_ts, {"precip": 0.0, "conditions": {}})
         b["precip"] += h["precip"]
@@ -292,4 +310,4 @@ async def fetch_weather_history(
             "precipitation": round(b["precip"], 1),
         })
 
-    return {"interval": interval_sec, "points": points}
+    return {"interval": interval_sec, "anchor": anchor, "points": points}

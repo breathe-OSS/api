@@ -269,7 +269,10 @@ def register_zone_routes(app: FastAPI) -> None:
     async def get_weather_history_route(
         zone_id: str,
         time_range: str = Path(
-            ..., examples=["1w"], description="Time range (e.g., 1d, 7d, 1mo, 1y)"
+            ...,
+            examples=["1w"],
+            description="Rolling range (1d, 7d, 1mo, 1y) or calendar window in IST "
+            "(2026-10, 2026-W42, 2026-10-15, 2026-10-01_2026-10-07)",
         ),
         interval: str = Path(
             ..., examples=["1h"], description="Grouping interval (e.g., 1h, 4h, 1d)"
@@ -279,6 +282,8 @@ def register_zone_routes(app: FastAPI) -> None:
         if zone_id not in ZONES:
             raise HTTPException(status_code=404, detail="zone not found")
 
+        window = parse_window(time_range)
+
         cache_key = f"weather:{zone_id}:{time_range}:{interval}"
 
         cached = await _read_cache(cache_key)
@@ -286,10 +291,12 @@ def register_zone_routes(app: FastAPI) -> None:
             return cached
 
         z = ZONES[zone_id]
-        time_range_sec = parse_time(time_range)
+        time_range_sec = parse_time(time_range) if window is None else 0
         interval_sec = parse_time(interval)
 
-        payload = await fetch_weather_history(z["lat"], z["lon"], time_range_sec, interval_sec)
+        payload = await fetch_weather_history(
+            z["lat"], z["lon"], time_range_sec, interval_sec, window
+        )
         payload["zone_id"] = zone_id
 
         await _write_cache(cache_key, payload, WEATHER_CACHE_TTL)
