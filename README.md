@@ -144,6 +144,15 @@ From the `api` directory:
   `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`
   Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu-city/30d/15m/pm2.5,pm10?format=json`
 
+- **Calendar Windows**:
+  `time_range` on `/historical-data` also takes a fixed window instead of a rolling duration. Dates are read in IST, buckets are counted from the start of the window, and a malformed or backwards window returns `400`.
+  - Month: `2026-10`
+  - ISO week (Monday to Sunday): `2026-W42`
+  - Day: `2026-10-15`
+  - Span of days, both ends included: `2026-10-01_2026-10-07`
+
+  Example: `/historical-data/jammu_city/2026-W42/1h/pm2.5,pm10?format=json`
+
 ## Development
 The project is designed to be data-driven. Adding or modifying zones (e.g., converting a zone from satellite to physical AirGradient sensors) does not require changing Python code:
 

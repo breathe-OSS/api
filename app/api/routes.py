@@ -32,7 +32,8 @@ import csv
 import io
 import json
 import re
-from typing import Any, Callable, Dict, Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -52,6 +53,15 @@ HISTORY_CACHE_TTL = 3600
 
 DEFAULT_RANGE_SECONDS = 86400
 DEFAULT_INTERVAL_SECONDS = 900
+
+# calendar dates are read as local time for the network, which all sits in IST.
+NETWORK_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
+MIN_WINDOW_YEAR = 2000
+
+MONTH_TOKEN = re.compile(r"(\d{4})-(\d{2})")
+WEEK_TOKEN = re.compile(r"(\d{4})-W(\d{2})")
+DAY_TOKEN = re.compile(r"\d{4}-\d{2}-\d{2}")
+SPAN_TOKEN = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})")
 
 def parse_time(t_str: str) -> int:
     """Turn a duration like 1d, 6h or 1mo into seconds. Defaults to one day."""
@@ -78,6 +88,60 @@ def parse_time(t_str: str) -> int:
         return int(t_str[:-1]) * 86400
 
     return DEFAULT_RANGE_SECONDS
+
+
+def _calendar_days(token: str) -> Tuple[date, date]:
+    """Resolve a calendar token to its first day and the day after its last."""
+    month = MONTH_TOKEN.fullmatch(token)
+    if month:
+        first = date(int(month.group(1)), int(month.group(2)), 1)
+        return first, (first + timedelta(days=32)).replace(day=1)
+
+    week = WEEK_TOKEN.fullmatch(token)
+    if week:
+        first = date.fromisocalendar(int(week.group(1)), int(week.group(2)), 1)
+        return first, first + timedelta(days=7)
+
+    if DAY_TOKEN.fullmatch(token):
+        first = date.fromisoformat(token)
+        return first, first + timedelta(days=1)
+
+    span = SPAN_TOKEN.fullmatch(token)
+    if span:
+        first = date.fromisoformat(span.group(1))
+        last = date.fromisoformat(span.group(2))
+        if last < first:
+            raise ValueError("span ends before it starts")
+        return first, last + timedelta(days=1)
+
+    raise ValueError("unknown calendar token")
+
+
+def parse_window(t_str: str) -> Optional[Tuple[int, int]]:
+    """Turn a calendar token into unix start and exclusive end, or None for a rolling duration.
+
+    Accepts 2026-10 (month), 2026-W42 (ISO week), 2026-10-15 (day) and
+    2026-10-01_2026-10-07 (inclusive span of days).
+    """
+    if "-" not in t_str:
+        return None
+
+    try:
+        first, after_last = _calendar_days(t_str.upper())
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="time_range must look like 2026-10, 2026-W42, 2026-10-15 or "
+            "2026-10-01_2026-10-07",
+        )
+
+    if first.year < MIN_WINDOW_YEAR:
+        raise HTTPException(status_code=400, detail="time_range is too far in the past")
+
+    start = datetime.combine(first, time.min, NETWORK_TIMEZONE)
+    end = datetime.combine(after_last, time.min, NETWORK_TIMEZONE)
+
+    return int(start.timestamp()), int(end.timestamp())
 
 
 async def _read_cache(cache_key: str) -> Optional[Response]:
@@ -238,7 +302,10 @@ def register_zone_routes(app: FastAPI) -> None:
             ..., examples=["jammu_city"], description="The ID of the zone or 'all'"
         ),
         time_range: str = Path(
-            ..., examples=["1mo"], description="Time range (e.g., 1d, 7d, 1mo, 1y)"
+            ...,
+            examples=["1mo"],
+            description="Rolling range (1d, 7d, 1mo, 1y) or calendar window in IST "
+            "(2026-10, 2026-W42, 2026-10-15, 2026-10-01_2026-10-07)",
         ),
         interval: str = Path(
             ..., examples=["15m"], description="Grouping interval (e.g., 15m, 1h, 1d)"
@@ -249,6 +316,8 @@ def register_zone_routes(app: FastAPI) -> None:
         format: str = Query("json", examples=["json"], description="Output format (json or csv)"),
     ):
         """Stream a window of readings as json or csv, caching the finished body."""
+        window = parse_window(time_range)
+
         cache_key = f"hist:{location}:{time_range}:{interval}:{metrics}:{format.lower()}"
 
         # a zone_id can contain characters that do not belong in a header value,
@@ -272,7 +341,7 @@ def register_zone_routes(app: FastAPI) -> None:
                     content=cached_data, media_type="application/json", headers=headers
                 )
 
-        time_range_sec = parse_time(time_range)
+        time_range_sec = parse_time(time_range) if window is None else 0
         interval_sec = parse_time(interval)
         if interval_sec == 0:
             interval_sec = DEFAULT_INTERVAL_SECONDS
@@ -302,7 +371,7 @@ def register_zone_routes(app: FastAPI) -> None:
             count_pm10 = 0
 
             for row in stream_historical_data(
-                location, time_range_sec, interval_sec, metrics_list
+                location, time_range_sec, interval_sec, metrics_list, window
             ):
                 if not first:
                     yield ","
@@ -367,7 +436,7 @@ def register_zone_routes(app: FastAPI) -> None:
             yield drain()
 
             for row in stream_historical_data(
-                location, time_range_sec, interval_sec, metrics_list
+                location, time_range_sec, interval_sec, metrics_list, window
             ):
                 writer.writerow([row.get(k, "") for k in header])
                 yield drain()

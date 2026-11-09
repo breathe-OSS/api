@@ -33,7 +33,7 @@ import math
 import os
 import sqlite3
 import time
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Optional, Tuple
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -845,6 +845,22 @@ def _pick_table(interval_sec: int) -> tuple:
     return "sensor_readings", "timestamp"
 
 
+def _bucket_expr(time_col: str, interval_sec: int, anchor: Optional[int]) -> str:
+    """SQL for a row's bucket, counted from the anchor when a calendar window sets one."""
+    if anchor is None:
+        return f"CAST({time_col} / {interval_sec} AS INTEGER) * {interval_sec}"
+
+    return f"CAST(({time_col} - {anchor}) / {interval_sec} AS INTEGER) * {interval_sec} + {anchor}"
+
+
+def _time_filter(time_col: str, marker: str, cutoff: float, window: Optional[Tuple[int, int]]) -> tuple:
+    """SQL and params selecting rows inside a calendar window or after a rolling cutoff."""
+    if window is None:
+        return f"{time_col} > {marker}", [cutoff]
+
+    return f"{time_col} >= {marker} AND {time_col} < {marker}", list(window)
+
+
 def _stream_homogenised(
     location,
     node_names,
@@ -854,6 +870,7 @@ def _stream_homogenised(
     selected_metrics,
     table,
     time_col,
+    window=None,
 ) -> Iterator[dict]:
     """Stream a zone series rebuilt from its sensors, with per sensor offsets divided out.
 
@@ -879,7 +896,8 @@ def _stream_homogenised(
         ids = [location] + [f"{location}_{name}" for name in node_names]
         slots = ", ".join([marker] * len(ids))
         metrics_sql = ", ".join([f"AVG({m}) as {m}" for m in selected_metrics])
-        ts_expr = f"CAST({time_col} / {interval_sec} AS INTEGER) * {interval_sec}"
+        ts_expr = _bucket_expr(time_col, interval_sec, window[0] if window else None)
+        time_filter, time_params = _time_filter(time_col, marker, cutoff, window)
 
         c.execute(
             f"""
@@ -888,11 +906,11 @@ def _stream_homogenised(
                     {ts_expr} as ts,
                     {metrics_sql}
                 FROM {table}
-                WHERE {time_col} > {marker} AND zone_id IN ({slots})
+                WHERE {time_filter} AND zone_id IN ({slots})
                 GROUP BY zone_id, 2
                 ORDER BY 2 ASC, zone_id ASC
             """,
-            [cutoff] + ids,
+            time_params + ids,
         )
 
         current_ts = None
@@ -973,8 +991,13 @@ def stream_historical_data(
     time_range_sec: int,
     interval_sec: int,
     metrics: List[str],
+    window: Optional[Tuple[int, int]] = None,
 ) -> Iterator[dict]:
     """Stream readings over a window, grouped into interval sized buckets.
+
+    A calendar window, given as unix start and exclusive end, replaces the
+    rolling range and counts its buckets from its own start, so a day's first
+    bucket opens at midnight rather than wherever the UTC grid falls.
 
     For multi sensor zones the series is rebuilt from the individual sensor rows
     with per sensor offsets applied, so that a sensor joining or dropping out of
@@ -1005,6 +1028,7 @@ def stream_historical_data(
                     selected_metrics,
                     table,
                     time_col,
+                    window,
                 )
                 return
 
@@ -1017,10 +1041,9 @@ def stream_historical_data(
 
         marker = _placeholder(is_pg)
         metrics_sql = ", ".join([f"AVG({m}) as {m}" for m in selected_metrics])
-        ts_expr = f"CAST({time_col} / {interval_sec} AS INTEGER) * {interval_sec}"
+        ts_expr = _bucket_expr(time_col, interval_sec, window[0] if window else None)
 
-        where_clause = f"{time_col} > {marker}"
-        params = [cutoff]
+        where_clause, params = _time_filter(time_col, marker, cutoff, window)
 
         if location != "all":
             where_clause += f" AND zone_id = {marker}"
