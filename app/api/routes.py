@@ -226,6 +226,48 @@ def register_zone_routes(app: FastAPI) -> None:
 
         return await get_zone_data(z["id"], z["name"], z["lat"], z["lon"], z_type)
 
+    @app.get("/aqi/zones")
+    async def get_zones_aqi(
+        ids: Optional[str] = Query(
+            None, description="comma separated zone ids, every zone when left out"
+        ),
+    ) -> dict:
+        """Current readings for many zones in one request, same payload as /aqi/zone/{zone_id}.
+
+        The apps used to ask for every zone one by one, about twenty five
+        requests on each refresh. Zones that fail are left out of the list
+        instead of failing the whole request, which is how the apps already
+        treat a zone that didn't come back.
+        """
+        if ids:
+            # dict.fromkeys drops repeats but keeps the order they were asked in
+            wanted = list(dict.fromkeys(zid.strip() for zid in ids.split(",") if zid.strip()))
+            unknown = [zid for zid in wanted if zid not in ZONES]
+            if unknown:
+                raise HTTPException(status_code=404, detail=f"zone not found: {', '.join(unknown)}")
+        else:
+            wanted = list(ZONES.keys())
+
+        # nearly always a straight ram cache hit, but a cold cache would
+        # otherwise fire every upstream call at once, and open-meteo rate limits.
+        # same limit as the background updater.
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch(zone_id: str):
+            """Serve one zone, or None if it fails."""
+            z = ZONES[zone_id]
+            async with semaphore:
+                try:
+                    return await get_zone_data(
+                        z["id"], z["name"], z["lat"], z["lon"], z.get("zone_type", "hills")
+                    )
+                except Exception as e:
+                    print(f"Bulk AQI failed for {zone_id}: {e}")
+                    return None
+
+        results = await asyncio.gather(*(fetch(zid) for zid in wanted))
+        return {"zones": [r for r in results if r is not None]}
+
     @app.get("/zones")
     async def list_zones() -> dict:
         """List every zone with enough detail to draw it on a map."""
