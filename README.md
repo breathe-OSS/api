@@ -1,6 +1,8 @@
 # Breathe backend
 A modular FastAPI backend designed to retrieve and standardize air quality data across the J&K & Ladakh region for the **BreatheOSS** clients. The system aggregates data from multiple providers: **OpenMeteo** for satellite-based estimates and **AirGradient** for high-precision ground sensors. It currently calculates AQI based on both **Indian (CPCB)** and **US EPA** standards.
 
+The full API documentation (every endpoint, field and quirk, with examples) lives at [docs.breatheoss.app](https://docs.breatheoss.app). An interactive reference generated from the code is at [api.breatheoss.app/docs](https://api.breatheoss.app/docs).
+
 ## How the AQI is Calculated
 
 `[1]` The system accepts a dictionary of raw pollutant values. Before any math occurs, the system sanitizes the input keys using a robust mapping strategy.
@@ -133,6 +135,8 @@ From the `api` directory:
 Redis must be reachable. Without it, `/seasonal`, `/weather-history`, and `/historical-data` return errors.
 
 ## Endpoints
+The short list is below. For response fields, time range syntax, errors and examples, see [docs.breatheoss.app](https://docs.breatheoss.app).
+
 - **Zone Data**: Access data for a specific zone using its dynamic ID (e.g., `srinagar`, `jammu_city`, `leh`):
   `GET /aqi/<zone_id>`
 
