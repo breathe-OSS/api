@@ -990,6 +990,47 @@ def _resolve_airgradient_token(zone_node_cfg: Optional[Dict[str, Any]]) -> Tuple
     return os.getenv(token_env_var), token_env_var
 
 
+def _complete_node_map(
+    zone_id: str, raw_comps: Dict[str, Any], zone_type: str
+) -> Optional[Dict[str, Any]]:
+    """Every configured sensor of a zone in config order, offline ones included."""
+    node_names = database.zone_node_names(zone_id)
+    if not node_names:
+        return raw_comps.get("nodes")
+
+    live_nodes = raw_comps.get("nodes") or {}
+    statuses = {
+        entry["node"]: entry["status"]
+        for entry in raw_comps.get("_node_statuses") or []
+    }
+
+    node_map = {}
+    for name in node_names:
+        if name in live_nodes:
+            node_map[name] = {**live_nodes[name], "status": "active"}
+            continue
+
+        if len(node_names) > 1:
+            history_key = f"{zone_id}_{name}"
+        else:
+            history_key = zone_id
+
+        node_map[name] = {
+            "pm2_5": None,
+            "pm10": None,
+            "temp": None,
+            "humidity": None,
+            "aqi": None,
+            "us_aqi": None,
+            "status": statuses.get(name, "offline"),
+            "history": _downsample_to_hourly(
+                database.get_history(history_key, hours=24), zone_type=zone_type
+            ),
+        }
+
+    return node_map
+
+
 async def get_zone_data(
     zone_id: str,
     zone_name: str,
@@ -1173,6 +1214,11 @@ async def get_zone_data(
         averages_24h = _calculate_24h_averages(history, zone_type)
         weather = await get_zone_weather(lat, lon, raw_comps.get("pm2_5"))
 
+        if zone_info and zone_info.get("provider") == "airgradient":
+            node_map = _complete_node_map(zone_id, raw_comps, zone_type)
+        else:
+            node_map = raw_comps.get("nodes")
+
         full_payload = {
             "zone_id": zone_id,
             "zone_name": zone_name,
@@ -1182,7 +1228,7 @@ async def get_zone_data(
             "averages_24h": averages_24h,
             "history": history,
             "warning": warning_msg,
-            "nodes": raw_comps.get("nodes"),
+            "nodes": node_map,
             "weather": weather,
             **aqi_data,
         }
