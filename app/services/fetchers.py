@@ -242,6 +242,14 @@ def _is_jump_spike(
     return None
 
 
+def _first_present(entry: Dict[str, Any], *keys: str) -> Any:
+    """The first of these fields the sensor actually sent. A reading of 0 counts."""
+    for key in keys:
+        if entry.get(key) is not None:
+            return entry[key]
+    return None
+
+
 def _parse_ag_timestamp(raw: Optional[str], fallback: float) -> float:
     """Read airgradient's ISO timestamp, falling back to now if it is unusable."""
     if not raw:
@@ -280,8 +288,8 @@ async def fetch_airgradient_history(
 
             # the corrected values are the calibrated ones and are preferred
             # wherever the sensor reports them.
-            pm25 = entry.get("pm02_corrected") or entry.get("pm02")
-            pm10 = entry.get("pm10_corrected") or entry.get("pm10")
+            pm25 = _first_present(entry, "pm02_corrected", "pm02")
+            pm10 = _first_present(entry, "pm10_corrected", "pm10")
 
             if pm25 is not None:
                 history.append({
@@ -488,13 +496,13 @@ async def fetch_airgradient_common(
         if token == "PUBLIC_TOKEN" and isinstance(d, list):
             d = next((s for s in d if s.get("locationId") == loc_id), {})
 
-        pm25 = d.get("pm02_corrected") or d.get("pm02")
-        pm10 = d.get("pm10_corrected") or d.get("pm10")
+        pm25 = _first_present(d, "pm02_corrected", "pm02")
+        pm10 = _first_present(d, "pm10_corrected", "pm10")
 
         # the api sometimes hands these back as strings, hence the float() calls
         # everywhere below.
-        temp_val = d.get("atmp_corrected") or d.get("atmp")
-        humid_val = d.get("rhum_corrected") or d.get("rhum")
+        temp_val = _first_present(d, "atmp_corrected", "atmp")
+        humid_val = _first_present(d, "rhum_corrected", "rhum")
 
         current_time = datetime.now().timestamp()
         node_cache_key = f"{zone_id}_{node_name}"
@@ -705,8 +713,8 @@ async def fetch_multi_node_airgradient(
                 continue
             data = sensor_data
 
-        pm25 = data.get("pm02_corrected") or data.get("pm02")
-        pm10 = data.get("pm10_corrected") or data.get("pm10")
+        pm25 = _first_present(data, "pm02_corrected", "pm02")
+        pm10 = _first_present(data, "pm10_corrected", "pm10")
 
         if pm25 is None:
             node_statuses.append({"node": node_name, "status": "no_data"})
@@ -763,8 +771,8 @@ async def fetch_multi_node_airgradient(
             _SPIKE_CACHE[node_cache_key] = current_time
             continue
 
-        temp_val = data.get("atmp_corrected") or data.get("atmp")
-        humid_val = data.get("rhum_corrected") or data.get("rhum")
+        temp_val = _first_present(data, "atmp_corrected", "atmp")
+        humid_val = _first_present(data, "rhum_corrected", "rhum")
 
         valid_readings.append({
             "pm2_5": pm25_val,
