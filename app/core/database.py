@@ -262,6 +262,13 @@ def init_db() -> None:
     c.execute(
         "CREATE INDEX IF NOT EXISTS idx_zone_time_15m ON sensor_readings_15m (zone_id, ts)"
     )
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS raw_backfill (
+            history_key TEXT PRIMARY KEY,
+            reached REAL
+        )
+    """)
+
     c.execute("CREATE INDEX IF NOT EXISTS idx_node_offsets ON node_offsets (zone_id)")
 
     conn.commit()
@@ -350,7 +357,7 @@ def get_history(zone_id, hours=24) -> List[dict]:
             SELECT timestamp as ts, pm2_5, pm10, temp, humidity,
                    pm2_5_raw, pm10_raw, temp_raw, humidity_raw
             FROM sensor_readings
-            WHERE zone_id = {marker} AND timestamp > {marker}
+            WHERE zone_id = {marker} AND timestamp > {marker} AND pm2_5 IS NOT NULL
             ORDER BY timestamp ASC
         """,
         (zone_id, cutoff),
@@ -360,6 +367,108 @@ def get_history(zone_id, hours=24) -> List[dict]:
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+def save_raw_backfill(readings: List[dict]) -> None:
+    """Store uncorrected readings fetched after the fact, leaving the corrected columns empty."""
+    if not readings:
+        return
+
+    conn = get_connection()
+    c = conn.cursor()
+    marker = _placeholder(_is_postgres(conn))
+
+    try:
+        c.executemany(
+            f"""
+                INSERT INTO sensor_readings
+                    (zone_id, timestamp, pm2_5_raw, pm10_raw, temp_raw, humidity_raw)
+                VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker})
+                ON CONFLICT (zone_id, timestamp) DO UPDATE SET
+                    pm2_5_raw = COALESCE(sensor_readings.pm2_5_raw, excluded.pm2_5_raw),
+                    pm10_raw = COALESCE(sensor_readings.pm10_raw, excluded.pm10_raw),
+                    temp_raw = COALESCE(sensor_readings.temp_raw, excluded.temp_raw),
+                    humidity_raw = COALESCE(sensor_readings.humidity_raw, excluded.humidity_raw)
+            """,
+            [
+                (
+                    r["zone_id"],
+                    r["timestamp"],
+                    r.get("pm2_5_raw"),
+                    r.get("pm10_raw"),
+                    r.get("temp_raw"),
+                    r.get("humidity_raw"),
+                )
+                for r in readings
+            ],
+        )
+        conn.commit()
+
+    except Exception as e:
+        print(f"DB Raw Backfill Save Error: {e}")
+
+    finally:
+        conn.close()
+
+
+def raw_backfill_window(history_key: str) -> Optional[Tuple[float, float]]:
+    """Where the raw backfill for a sensor stands, as (oldest stored reading, oldest covered so far)."""
+    conn = get_connection()
+    c = conn.cursor()
+    marker = _placeholder(_is_postgres(conn))
+
+    try:
+        c.execute(
+            f"SELECT MIN(timestamp) as first FROM sensor_readings WHERE zone_id = {marker} AND pm2_5 IS NOT NULL",
+            (history_key,),
+        )
+        row = c.fetchone()
+        first = dict(row)["first"] if row else None
+        if first is None:
+            return None
+
+        c.execute(f"SELECT reached FROM raw_backfill WHERE history_key = {marker}", (history_key,))
+        row = c.fetchone()
+        if row and dict(row)["reached"] is not None:
+            return first, dict(row)["reached"]
+
+        c.execute(
+            f"SELECT MIN(timestamp) as first FROM sensor_readings WHERE zone_id = {marker} AND pm2_5_raw IS NOT NULL",
+            (history_key,),
+        )
+        row = c.fetchone()
+        raw_first = dict(row)["first"] if row else None
+        return first, raw_first if raw_first is not None else time.time()
+
+    except Exception as e:
+        print(f"DB Raw Backfill Lookup Error: {e}")
+        return None
+
+    finally:
+        conn.close()
+
+
+def set_raw_backfill_reached(history_key: str, reached: float) -> None:
+    """Remember how far back the raw backfill for a sensor has got."""
+    conn = get_connection()
+    c = conn.cursor()
+    marker = _placeholder(_is_postgres(conn))
+
+    try:
+        c.execute(
+            f"""
+                INSERT INTO raw_backfill (history_key, reached) VALUES ({marker}, {marker})
+                ON CONFLICT (history_key) DO UPDATE SET reached = excluded.reached
+            """,
+            (history_key, reached),
+        )
+        conn.commit()
+
+    except Exception as e:
+        print(f"DB Raw Backfill Progress Error: {e}")
+
+    finally:
+        conn.close()
 
 
 def save_seasonal_climatology(zone_id, months: List[dict]) -> None:
@@ -446,7 +555,7 @@ def get_monthly_sensor_averages(zone_id) -> Dict[int, dict]:
     c.execute(
         f"""
             SELECT {month_expr} as month,
-                   AVG(pm2_5) as pm2_5, AVG(pm10) as pm10, COUNT(*) as samples
+                   AVG(pm2_5) as pm2_5, AVG(pm10) as pm10, COUNT(pm2_5) as samples
             FROM sensor_readings
             WHERE zone_id = {marker}
             GROUP BY 1

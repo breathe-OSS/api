@@ -32,7 +32,7 @@
 
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -1576,6 +1576,81 @@ async def get_place_data(place_id: str, force_refresh: bool = False) -> Dict[str
         "raw": None,
         "raw_available": False,
     }
+
+
+RAW_BACKFILL_CHUNK = 10 * 86400
+RAW_BACKFILL_CHUNKS_PER_PASS = 4
+
+
+def _ag_basic_time(ts: float) -> str:
+    """A unix time in the compact ISO form airgradient's past endpoint expects."""
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+async def _backfill_sensor_raw(client: httpx.AsyncClient, sensor: Dict[str, Any]) -> None:
+    """Walk one sensor's raw history back towards its first stored reading, a few chunks at a time."""
+    zone_cfg = NODES_CONFIG.get(sensor["legacy_zone"]) or {}
+    node_cfg = next(
+        (n for n in zone_cfg.get("nodes", []) if n.get("id") == sensor["id"]), None
+    )
+    if node_cfg is None:
+        return
+
+    zone_token, _ = _resolve_airgradient_token(zone_cfg)
+    token = _resolve_node_token(node_cfg, zone_token)
+    if not token or token == "PUBLIC_TOKEN":
+        return
+
+    key = sensor["history_key"]
+
+    for _ in range(RAW_BACKFILL_CHUNKS_PER_PASS):
+        window = database.raw_backfill_window(key)
+        if window is None:
+            return
+
+        first, reached = window
+        if reached <= first:
+            return
+
+        start = max(first, reached - RAW_BACKFILL_CHUNK)
+        params = {"token": token, "from": _ag_basic_time(start), "to": _ag_basic_time(reached)}
+        url = f"{AG_BASE_URL}/locations/{sensor['location_id']}/measures/past"
+
+        try:
+            r = await client.get(url, params=params)
+        except Exception as e:
+            print(f"Raw backfill fetch failed for {sensor['id']}: {e}")
+            return
+
+        if r.status_code != 200:
+            print(f"Raw backfill for {sensor['id']} got {r.status_code}")
+            return
+
+        readings = []
+        for entry in r.json() or []:
+            ts = _parse_ag_timestamp(entry.get("timestamp"), 0)
+            if ts <= 0:
+                continue
+
+            raw = _raw_fields(entry)
+            if raw["pm2_5_raw"] is None:
+                continue
+
+            readings.append({"zone_id": key, "timestamp": ts, **raw})
+
+        database.save_raw_backfill(readings)
+        database.set_raw_backfill_reached(key, start)
+        print(f"Raw backfill for {sensor['id']}: {len(readings)} readings back to {_ag_basic_time(start)}")
+
+
+async def backfill_raw_history() -> None:
+    """Fill in uncorrected readings for the time before we started storing them."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        for sensor in SENSOR_ZONES.values():
+            try:
+                await _backfill_sensor_raw(client, sensor)
+            except Exception as e:
+                print(f"Raw backfill error for {sensor['id']}: {e}")
 
 
 async def start_background_loop():

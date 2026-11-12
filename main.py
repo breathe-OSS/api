@@ -36,7 +36,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.routes import register_zone_routes
 from app.core.redis_client import init_redis_pool, close_redis_pool
-from app.services.fetchers import update_all_zones_background
+from app.services.fetchers import update_all_zones_background, backfill_raw_history
 
 # how long the background loop sleeps between passes. the airgradient sensors
 # report roughly every fifteen minutes, so polling faster only costs quota.
@@ -60,6 +60,7 @@ async def periodic_updates() -> None:
     while True:
         try:
             await update_all_zones_background()
+            await backfill_raw_history()
 
             # these are imported here rather than at module scope because both
             # modules import from app.core, and pulling them in at the top would
