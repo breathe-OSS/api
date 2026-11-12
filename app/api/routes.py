@@ -39,6 +39,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.core.config import ZONES, SENSOR_INFO, PLACES, SENSOR_ZONES
+from app.core.conversions import calculate_overall_aqi
 from app.core.database import VALID_METRICS, stream_historical_data, check_postgres_health
 from app.core.redis_client import check_redis_health
 from app.services.fetchers import get_zone_data, get_place_data
@@ -50,6 +51,12 @@ from app.services.weather import fetch_weather_history
 SEASONAL_CACHE_TTL = 21600
 WEATHER_CACHE_TTL = 3600
 HISTORY_CACHE_TTL = 3600
+
+# metrics worked out per bucket from the particulates rather than stored.
+COMPUTED_METRICS = {
+    "us_aqi": ("pm2.5", "pm10"),
+    "us_aqi_raw": ("pm2.5_raw", "pm10_raw"),
+}
 
 DEFAULT_RANGE_SECONDS = 86400
 DEFAULT_INTERVAL_SECONDS = 900
@@ -192,6 +199,20 @@ def _place_summary(place: Dict[str, Any]) -> Dict[str, Any]:
         "division": place.get("division"),
         "legacy_zone": place.get("legacy_zone", place["id"]),
     }
+
+
+def _bucket_us_aqi(pm2_5: Optional[float], pm10: Optional[float]) -> Optional[int]:
+    """The US AQI of one bucket's mean concentrations."""
+    if pm2_5 is None and pm10 is None:
+        return None
+
+    comps = {}
+    if pm2_5 is not None:
+        comps["pm2_5"] = pm2_5
+    if pm10 is not None:
+        comps["pm10"] = pm10
+
+    return calculate_overall_aqi(comps).get("us_aqi")
 
 
 def register_zone_routes(app: FastAPI) -> None:
@@ -447,24 +468,44 @@ def register_zone_routes(app: FastAPI) -> None:
         if interval_sec == 0:
             interval_sec = DEFAULT_INTERVAL_SECONDS
 
-        metrics_list = metrics.split(",")
+        requested = [m.strip() for m in metrics.split(",") if m.strip()]
+        column_metrics = [m for m in requested if m in VALID_METRICS]
+        computed = [m for m in requested if m in COMPUTED_METRICS]
 
-        actual_metrics = [VALID_METRICS[m] for m in metrics_list if m in VALID_METRICS]
-        if not actual_metrics:
-            actual_metrics = ["pm2_5", "pm10"]
+        if not column_metrics and not computed:
+            column_metrics = ["pm2.5", "pm10"]
+
+        metrics_list = list(column_metrics)
+        for name in computed:
+            for source in COMPUTED_METRICS[name]:
+                if source not in metrics_list:
+                    metrics_list.append(source)
+
+        actual_metrics = [VALID_METRICS[m] for m in column_metrics] + computed
 
         store_key = location
         if location in SENSOR_ZONES:
             store_key = SENSOR_ZONES[location]["history_key"]
 
         def rows():
-            """Stored buckets, labelled with the id they were asked for."""
+            """Stored buckets with the computed metrics added and helper columns dropped."""
             for row in stream_historical_data(
                 store_key, time_range_sec, interval_sec, metrics_list, window
             ):
-                if store_key != location:
-                    row["zone_id"] = location
-                yield row
+                out = {"zone_id": location if store_key != location else row["zone_id"]}
+                out["ts"] = row["ts"]
+
+                for name in computed:
+                    pm2_5_col, pm10_col = (VALID_METRICS[s] for s in COMPUTED_METRICS[name])
+                    value = _bucket_us_aqi(row.get(pm2_5_col), row.get(pm10_col))
+                    if value is not None:
+                        row[name] = value
+
+                for key in actual_metrics:
+                    if row.get(key) is not None:
+                        out[key] = row[key]
+
+                yield out
 
         def generate_json():
             """Yield the json body a row at a time, tallying stats as it goes."""
@@ -474,15 +515,9 @@ def register_zone_routes(app: FastAPI) -> None:
             yield '{"data": ['
             first = True
 
-            max_pm25 = -1
-            min_pm25 = float("inf")
-            sum_pm25 = 0
-            count_pm25 = 0
-
-            max_pm10 = -1
-            min_pm10 = float("inf")
-            sum_pm10 = 0
-            count_pm10 = 0
+            tallies = {}
+            for key in ["pm2_5", "pm10"] + actual_metrics:
+                tallies[key] = {"max": None, "min": None, "sum": 0.0, "count": 0}
 
             for row in rows():
                 if not first:
@@ -491,37 +526,27 @@ def register_zone_routes(app: FastAPI) -> None:
                 yield json.dumps(row)
                 first = False
 
-                pm25 = row.get("pm2_5")
-                pm10 = row.get("pm10")
+                for key, tally in tallies.items():
+                    value = row.get(key)
+                    if value is None:
+                        continue
 
-                if pm25 is not None:
-                    if pm25 > max_pm25:
-                        max_pm25 = pm25
-                    if pm25 < min_pm25:
-                        min_pm25 = pm25
-                    sum_pm25 += pm25
-                    count_pm25 += 1
+                    if tally["max"] is None or value > tally["max"]:
+                        tally["max"] = value
+                    if tally["min"] is None or value < tally["min"]:
+                        tally["min"] = value
+                    tally["sum"] += value
+                    tally["count"] += 1
 
-                if pm10 is not None:
-                    if pm10 > max_pm10:
-                        max_pm10 = pm10
-                    if pm10 < min_pm10:
-                        min_pm10 = pm10
-                    sum_pm10 += pm10
-                    count_pm10 += 1
-
-            # the sentinels are only meaningful if something was counted, so
-            # they are converted back to null where nothing was.
             stats = {}
-            if count_pm25 > 0 or count_pm10 > 0:
-                stats = {
-                    "max_pm2_5": max_pm25 if max_pm25 >= 0 else None,
-                    "min_pm2_5": min_pm25 if min_pm25 != float("inf") else None,
-                    "avg_pm2_5": round(sum_pm25 / count_pm25, 2) if count_pm25 > 0 else None,
-                    "max_pm10": max_pm10 if max_pm10 >= 0 else None,
-                    "min_pm10": min_pm10 if min_pm10 != float("inf") else None,
-                    "avg_pm10": round(sum_pm10 / count_pm10, 2) if count_pm10 > 0 else None,
-                }
+            if any(tally["count"] > 0 for tally in tallies.values()):
+                for key, tally in tallies.items():
+                    stats[f"max_{key}"] = tally["max"]
+                    stats[f"min_{key}"] = tally["min"]
+                    if tally["count"] > 0:
+                        stats[f"avg_{key}"] = round(tally["sum"] / tally["count"], 2)
+                    else:
+                        stats[f"avg_{key}"] = None
 
             yield '], "stats": ' + json.dumps(stats) + "}"
 
