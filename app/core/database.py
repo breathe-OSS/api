@@ -369,6 +369,30 @@ def get_history(zone_id, hours=24) -> List[dict]:
     return [dict(row) for row in rows]
 
 
+def get_raw_history(zone_id, hours=24) -> List[dict]:
+    """Every reading with raw values for a zone in the last so many hours, oldest first."""
+    conn = get_connection()
+    c = conn.cursor()
+    marker = _placeholder(_is_postgres(conn))
+
+    cutoff = time.time() - (hours * 3600)
+
+    c.execute(
+        f"""
+            SELECT timestamp as ts, pm2_5_raw, pm10_raw, temp_raw, humidity_raw
+            FROM sensor_readings
+            WHERE zone_id = {marker} AND timestamp > {marker} AND pm2_5_raw IS NOT NULL
+            ORDER BY timestamp ASC
+        """,
+        (zone_id, cutoff),
+    )
+
+    rows = c.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
 def save_raw_backfill(readings: List[dict]) -> None:
     """Store uncorrected readings fetched after the fact, leaving the corrected columns empty."""
     if not readings:

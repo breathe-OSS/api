@@ -1377,6 +1377,53 @@ async def get_zone_data(
         raise e
 
 
+RAW_KEYS = ("pm2_5_raw", "pm10_raw", "temp_raw", "humidity_raw")
+
+
+def _fill_raw_hours(
+    history: List[Dict[str, Any]],
+    raw_rows: List[Dict[str, Any]],
+    zone_type: str,
+) -> List[Dict[str, Any]]:
+    """Give hours that only have backfilled raw readings their raw values and raw index."""
+    sums: Dict[int, Dict[str, float]] = {}
+    counts: Dict[int, Dict[str, int]] = {}
+    for row in raw_rows:
+        dt = datetime.fromtimestamp(row["ts"])
+        hour_ts = int(dt.replace(minute=0, second=0, microsecond=0).timestamp())
+        hour_sums = sums.setdefault(hour_ts, {})
+        hour_counts = counts.setdefault(hour_ts, {})
+        for key in RAW_KEYS:
+            value = row.get(key)
+            if value is None:
+                continue
+            hour_sums[key] = hour_sums.get(key, 0.0) + value
+            hour_counts[key] = hour_counts.get(key, 0) + 1
+
+    for point in history:
+        if point.get("pm2_5_raw") is not None:
+            continue
+
+        hour_sums = sums.get(point["ts"])
+        if not hour_sums or "pm2_5_raw" not in hour_sums:
+            continue
+
+        for key, total in hour_sums.items():
+            point[key] = round(total / counts[point["ts"]][key], 2)
+
+        try:
+            raw_aqi = calculate_overall_aqi(
+                {"pm2_5": point["pm2_5_raw"], "pm10": point.get("pm10_raw") or 0.0},
+                zone_type=zone_type,
+            )
+            point["aqi_raw"] = raw_aqi.get("aqi")
+            point["us_aqi_raw"] = raw_aqi.get("us_aqi")
+        except Exception:
+            continue
+
+    return history
+
+
 def _raw_averages(history: List[Dict[str, Any]], zone_type: str) -> Dict[str, Any]:
     """24 hour means of the uncorrected readings, keyed like averages_24h."""
     raw_history = [
@@ -1478,8 +1525,12 @@ async def get_sensor_zone_data(sensor_id: str, force_refresh: bool = False) -> D
                     "concentrations_us_units": raw_aqi.get("concentrations_us_units"),
                 }
 
-            history = _downsample_to_hourly(
-                database.get_history(sensor["history_key"], hours=24), zone_type=zone_type
+            history = _fill_raw_hours(
+                _downsample_to_hourly(
+                    database.get_history(sensor["history_key"], hours=24), zone_type=zone_type
+                ),
+                database.get_raw_history(sensor["history_key"], hours=24),
+                zone_type,
             )
             source_name = "airgradient + openmeteo"
             timestamp = reading["timestamp"]
