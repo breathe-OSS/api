@@ -5,7 +5,9 @@
     "provider": "openmeteo",
     "lat": 33.7295,
     "lon": 75.1500,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Anantnag",
+    "division": "Kashmir"
   },
   "bandipora_town": {
     "id": "bandipora_town",
@@ -13,7 +15,9 @@
     "provider": "airgradient",
     "lat": 34.4174,
     "lon": 74.6437,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Bandipora",
+    "division": "Kashmir"
   },
   "baramulla_town": {
     "id": "baramulla_town",
@@ -21,7 +25,9 @@
     "provider": "openmeteo",
     "lat": 34.2090,
     "lon": 74.3420,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Baramulla",
+    "division": "Kashmir"
   },
   "doda_town": {
     "id": "doda_town",
@@ -29,7 +35,9 @@
     "provider": "airgradient",
     "lat": 33.1320,
     "lon": 75.5670,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Doda",
+    "division": "Jammu"
   },
   "ganderbal_town": {
     "id": "ganderbal_town",
@@ -37,7 +45,9 @@
     "provider": "airgradient",
     "lat": 34.2164,
     "lon": 74.7786,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Ganderbal",
+    "division": "Kashmir"
   },
   "handwara_town": {
     "id": "handwara_town",
@@ -45,7 +55,9 @@
     "provider": "openmeteo",
     "lat": 34.4049,
     "lon": 74.2854,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Kupwara",
+    "division": "Kashmir"
   },
   "jammu_city": {
     "id": "jammu_city",
@@ -53,7 +65,9 @@
     "provider": "airgradient",
     "lat": 32.7169,
     "lon": 74.8609,
-    "zone_type": "urban"
+    "zone_type": "urban",
+    "district": "Jammu",
+    "division": "Jammu"
   },
   "kargil_town": {
     "id": "kargil_town",
@@ -61,7 +75,9 @@
     "provider": "airgradient",
     "lat": 34.5539,
     "lon": 76.1349,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Kargil",
+    "division": "Ladakh"
   },
   "katra_town": {
     "id": "katra_town",
@@ -69,7 +85,9 @@
     "provider": "openmeteo",
     "lat": 32.9910,
     "lon": 74.9490,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Reasi",
+    "division": "Jammu"
   },
   "kathua_town": {
     "id": "kathua_town",
@@ -77,7 +95,9 @@
     "provider": "airgradient",
     "lat": 32.3670,
     "lon": 75.5230,
-    "zone_type": "industrial"
+    "zone_type": "industrial",
+    "district": "Kathua",
+    "division": "Jammu"
   },
   "kishtwar_town": {
     "id": "kishtwar_town",
@@ -85,7 +105,9 @@
     "provider": "openmeteo",
     "lat": 33.3103,
     "lon": 75.7665,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Kishtwar",
+    "division": "Jammu"
   },
   "kulgam_town": {
     "id": "kulgam_town",
@@ -93,7 +115,9 @@
     "provider": "openmeteo",
     "lat": 33.6440,
     "lon": 75.0200,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Kulgam",
+    "division": "Kashmir"
   },
   "kupwara_town": {
     "id": "kupwara_town",
@@ -101,7 +125,9 @@
     "provider": "openmeteo",
     "lat": 34.5260,
     "lon": 74.2580,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Kupwara",
+    "division": "Kashmir"
   },
   "leh": {
     "id": "leh",
@@ -109,7 +135,9 @@
     "provider": "airgradient",
     "lat": 34.1526,
     "lon": 77.5771,
-    "zone_type": "urban"
+    "zone_type": "urban",
+    "district": "Leh",
+    "division": "Ladakh"
   },
   "pahalgam_town": {
     "id": "pahalgam_town",
@@ -117,7 +145,9 @@
     "provider": "openmeteo",
     "lat": 34.0161,
     "lon": 75.3150,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Anantnag",
+    "division": "Kashmir"
   },
   "poonch_town": {
     "id": "poonch_town",
@@ -125,7 +155,9 @@
     "provider": "openmeteo",
     "lat": 33.7690,
     "lon": 74.0920,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Poonch",
+    "division": "Jammu"
   },
   "pulwama_town": {
     "id": "pulwama_town",
@@ -133,7 +165,9 @@
     "provider": "openmeteo",
     "lat": 33.8740,
     "lon": 74.8990,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Pulwama",
+    "division": "Kashmir"
   },
   "rajouri_town": {
     "id": "rajouri_town",
@@ -141,7 +175,9 @@
     "provider": "airgradient",
     "lat": 33.3750,
     "lon": 74.3150,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Rajouri",
+    "division": "Jammu"
   },
   "ramban_town": {
     "id": "ramban_town",
@@ -149,7 +185,9 @@
     "provider": "openmeteo",
     "lat": 33.2420,
     "lon": 75.2450,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Ramban",
+    "division": "Jammu"
   },
   "reasi_town": {
     "id": "reasi_town",
@@ -157,7 +195,9 @@
     "provider": "airgradient",
     "lat": 33.0800963,
     "lon": 74.8398673,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Reasi",
+    "division": "Jammu"
   },
   "samba_town": {
     "id": "samba_town",
@@ -165,7 +205,9 @@
     "provider": "airgradient",
     "lat": 32.5623,
     "lon": 75.1190,
-    "zone_type": "industrial"
+    "zone_type": "industrial",
+    "district": "Samba",
+    "division": "Jammu"
   },
   "shopian_town": {
     "id": "shopian_town",
@@ -173,7 +215,9 @@
     "provider": "openmeteo",
     "lat": 33.7200,
     "lon": 74.8300,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Shopian",
+    "division": "Kashmir"
   },
   "sopore_town": {
     "id": "sopore_town",
@@ -181,7 +225,9 @@
     "provider": "openmeteo",
     "lat": 34.2866,
     "lon": 74.4726,
-    "zone_type": "hills"
+    "zone_type": "hills",
+    "district": "Baramulla",
+    "division": "Kashmir"
   },
   "srinagar": {
     "id": "srinagar",
@@ -189,7 +235,9 @@
     "provider": "airgradient",
     "lat": 34.0709,
     "lon": 74.8122,
-    "zone_type": "urban"
+    "zone_type": "urban",
+    "district": "Srinagar",
+    "division": "Kashmir"
   },
   "udhampur_city": {
     "id": "udhampur_city",
@@ -197,6 +245,8 @@
     "provider": "airgradient",
     "lat": 32.9165,
     "lon": 75.1326,
-    "zone_type": "urban"
+    "zone_type": "urban",
+    "district": "Udhampur",
+    "division": "Jammu"
   }
 }
