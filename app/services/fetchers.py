@@ -38,10 +38,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from fastapi import HTTPException
 
-from app.core.config import ZONES, NODES_CONFIG, FESTIVALS
+from app.core.config import ZONES, NODES_CONFIG, FESTIVALS, SENSOR_ZONES, ESTIMATE_ZONES
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
-from app.services.weather import get_zone_weather
+from app.services.seasonal import season_for_month
+from app.services.weather import get_zone_weather, classify_condition, build_weather_text
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 AG_BASE_URL = "https://api.airgradient.com/public/api/v1"
@@ -52,6 +53,9 @@ _RAM_CACHE = {}
 
 # zone_id + node name -> when that node last produced a spike.
 _SPIKE_CACHE = {}
+
+# history key of a sensor -> its last reading and status.
+_NODE_LIVE = {}
 
 CACHE_DURATION = 900
 SPIKE_GRACE_PERIOD = 3600
@@ -268,6 +272,23 @@ def _raw_fields(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
         "pm10_raw": _as_float(entry.get("pm10")),
         "temp_raw": _as_float(entry.get("atmp")),
         "humidity_raw": _as_float(entry.get("rhum")),
+    }
+
+
+def _remember_node(
+    history_key: str,
+    status: str,
+    reading: Optional[Dict[str, Any]] = None,
+    gases: Optional[Dict[str, Any]] = None,
+    warning: Optional[str] = None,
+) -> None:
+    """Keep the last thing each sensor told us, for the per sensor zones."""
+    _NODE_LIVE[history_key] = {
+        "status": status,
+        "reading": reading,
+        "gases": gases or {},
+        "warning": warning,
+        "fetched_at": datetime.now().timestamp(),
     }
 
 
@@ -622,6 +643,30 @@ async def fetch_airgradient_common(
     om_points, gas_comps = _extract_openmeteo_gases(om_resp)
     current_comps.update(gas_comps)
 
+    if ag_resp.status_code != 200:
+        _remember_node(zone_id, "offline")
+    elif current_comps.get("pm2_5") is None:
+        _remember_node(
+            zone_id,
+            "spike_detected" if current_comps.get("_spike_warning") else "no_data",
+            gases=gas_comps,
+            warning=current_comps.get("_spike_warning"),
+        )
+    else:
+        _remember_node(
+            zone_id,
+            "active",
+            reading={
+                "pm2_5": current_comps["pm2_5"],
+                "pm10": current_comps.get("pm10"),
+                "temp": current_comps.get("temp"),
+                "humidity": current_comps.get("humidity"),
+                "timestamp": current_comps.get("_ag_timestamp"),
+                **raw_vals,
+            },
+            gases=gas_comps,
+        )
+
     history = _get_merged_history(zone_id, om_points)
 
     node_history_24h = database.get_history(zone_id, hours=24)
@@ -727,6 +772,7 @@ async def fetch_multi_node_airgradient(
         node_cfg = nodes[i]
         node_name = node_cfg.get("name", f"Node{i+1}")
         node_cache_key = f"{zone_id}_{node_name}"
+        node_zone_id = f"{zone_id}_{node_name}"
 
         remaining_minutes = _spike_grace_remaining(node_cache_key, current_time)
         if remaining_minutes is not None:
@@ -739,14 +785,17 @@ async def fetch_multi_node_airgradient(
                 f"{node_name}: excluded due to recent spike "
                 f"(grace period: {remaining_minutes} mins remaining)"
             )
+            _remember_node(node_zone_id, "grace_period", warning=spike_warnings[-1])
             continue
 
         if isinstance(resp, Exception):
             node_statuses.append({"node": node_name, "status": "error"})
+            _remember_node(node_zone_id, "offline")
             continue
 
         if resp.status_code != 200:
             node_statuses.append({"node": node_name, "status": "offline"})
+            _remember_node(node_zone_id, "offline")
             continue
 
         data = resp.json()
@@ -758,6 +807,7 @@ async def fetch_multi_node_airgradient(
             )
             if not sensor_data:
                 node_statuses.append({"node": node_name, "status": "offline"})
+                _remember_node(node_zone_id, "offline")
                 continue
             data = sensor_data
 
@@ -766,6 +816,7 @@ async def fetch_multi_node_airgradient(
 
         if pm25 is None:
             node_statuses.append({"node": node_name, "status": "no_data"})
+            _remember_node(node_zone_id, "no_data")
             continue
 
         pm25 = float(pm25)
@@ -782,6 +833,7 @@ async def fetch_multi_node_airgradient(
                 "status": "stale",
                 "age_minutes": int(data_age / 60),
             })
+            _remember_node(node_zone_id, "stale")
             continue
 
         pm25_val = pm25
@@ -800,9 +852,9 @@ async def fetch_multi_node_airgradient(
                 f"(PM2.5={pm25_val:.0f} or PM10={pm10_val:.0f})"
             )
             _SPIKE_CACHE[node_cache_key] = current_time
+            _remember_node(node_zone_id, "spike_detected", warning=spike_warnings[-1])
             continue
 
-        node_zone_id = f"{zone_id}_{node_name}"
         node_history_24h = database.get_history(node_zone_id, hours=24)
 
         pm25_jump = _is_jump_spike(node_zone_id, reading_ts, pm25_val, node_history_24h)
@@ -817,6 +869,7 @@ async def fetch_multi_node_airgradient(
                 f"(PM2.5 jumped +{int(pm25_jump)} in 1 hour)"
             )
             _SPIKE_CACHE[node_cache_key] = current_time
+            _remember_node(node_zone_id, "spike_detected", warning=spike_warnings[-1])
             continue
 
         temp_val = _first_present(data, "atmp_corrected", "atmp")
@@ -869,6 +922,24 @@ async def fetch_multi_node_airgradient(
     merged_humid = sum(humidity_readings) / len(humidity_readings) if humidity_readings else None
 
     om_points, current_gas_comps = _extract_openmeteo_gases(om_resp)
+
+    for r in valid_readings:
+        _remember_node(
+            f"{zone_id}_{r['node_name']}",
+            "active",
+            reading={
+                "pm2_5": r["pm2_5"],
+                "pm10": r["pm10"],
+                "temp": r["temp"],
+                "humidity": r["humidity"],
+                "timestamp": r["timestamp"],
+                "pm2_5_raw": r["pm2_5_raw"],
+                "pm10_raw": r["pm10_raw"],
+                "temp_raw": r["temp_raw"],
+                "humidity_raw": r["humidity_raw"],
+            },
+            gases=current_gas_comps,
+        )
 
     # each node gets its own index, computed against the same gas readings since
     # those are zone wide.
@@ -1306,6 +1377,207 @@ async def get_zone_data(
         raise e
 
 
+def _raw_averages(history: List[Dict[str, Any]], zone_type: str) -> Dict[str, Any]:
+    """24 hour means of the uncorrected readings, keyed like averages_24h."""
+    raw_history = [
+        {
+            "pm2_5": pt.get("pm2_5_raw"),
+            "pm10": pt.get("pm10_raw"),
+            "temp": pt.get("temp_raw"),
+            "humidity": pt.get("humidity_raw"),
+            "aqi": pt.get("aqi_raw"),
+            "us_aqi": pt.get("us_aqi_raw"),
+        }
+        for pt in history
+        if pt.get("pm2_5_raw") is not None
+    ]
+    return _calculate_24h_averages(raw_history, zone_type)
+
+
+def _sensor_weather(legacy: Optional[Dict[str, Any]], pm2_5: Optional[float]) -> Optional[Dict[str, Any]]:
+    """The district's current weather, reclassified against this sensor's own PM2.5."""
+    weather = (legacy or {}).get("weather")
+    if not weather:
+        return None
+
+    condition = classify_condition(weather.get("weather_code"), pm2_5)
+    season = weather.get("season") or season_for_month(datetime.now().month)
+
+    return {
+        **weather,
+        "condition": condition,
+        "season": season,
+        "text": build_weather_text(condition, season),
+    }
+
+
+def _place_fields(place: Dict[str, Any]) -> Dict[str, Any]:
+    """What every place payload carries about where it is."""
+    return {
+        "kind": place["kind"],
+        "district": place.get("district"),
+        "division": place.get("division"),
+    }
+
+
+async def _legacy_zone_payload(zone_id: str) -> Optional[Dict[str, Any]]:
+    """The old zone a sensor belongs to, fetched if our copy has gone stale."""
+    zone = ZONES[zone_id]
+    try:
+        return await get_zone_data(
+            zone_id, zone["name"], zone["lat"], zone["lon"], zone.get("zone_type", "hills")
+        )
+    except Exception as e:
+        print(f"Legacy zone {zone_id} unavailable for its sensors: {e}")
+        return None
+
+
+async def get_sensor_zone_data(sensor_id: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Build the payload for one sensor, served as a zone of its own."""
+    sensor = SENSOR_ZONES[sensor_id]
+    cached = _RAM_CACHE.get(sensor_id)
+    current_time = datetime.now().timestamp()
+
+    if cached and not force_refresh:
+        if current_time - cached.get("built_at", 0) < CACHE_DURATION:
+            return cached
+
+    zone_type = sensor.get("zone_type", "hills")
+    legacy = await _legacy_zone_payload(sensor["legacy_zone"])
+    live = _NODE_LIVE.get(sensor["history_key"])
+
+    reading = None
+    if live and live["status"] == "active" and live.get("reading"):
+        reading_ts = live["reading"].get("timestamp") or live["fetched_at"]
+        if current_time - reading_ts <= MAX_READING_AGE:
+            reading = {**live["reading"], "timestamp": reading_ts}
+
+    try:
+        if reading:
+            gases = live.get("gases") or {}
+            comps = {"pm2_5": reading["pm2_5"], "pm10": reading["pm10"] or 0.0, **gases}
+            aqi_data = calculate_overall_aqi(comps, zone_type=zone_type)
+
+            raw = None
+            if reading.get("pm2_5_raw") is not None:
+                raw_comps = {
+                    "pm2_5": reading["pm2_5_raw"],
+                    "pm10": reading.get("pm10_raw") or 0.0,
+                    **gases,
+                }
+                raw_aqi = calculate_overall_aqi(raw_comps, zone_type=zone_type)
+                raw = {
+                    "pm2_5": reading["pm2_5_raw"],
+                    "pm10": reading.get("pm10_raw"),
+                    "temp": reading.get("temp_raw"),
+                    "humidity": reading.get("humidity_raw"),
+                    "aqi": raw_aqi.get("aqi"),
+                    "us_aqi": raw_aqi.get("us_aqi"),
+                    "main_pollutant": raw_aqi.get("main_pollutant"),
+                    "us_main_pollutant": raw_aqi.get("us_main_pollutant"),
+                    "concentrations_us_units": raw_aqi.get("concentrations_us_units"),
+                }
+
+            history = _downsample_to_hourly(
+                database.get_history(sensor["history_key"], hours=24), zone_type=zone_type
+            )
+            source_name = "airgradient + openmeteo"
+            timestamp = reading["timestamp"]
+            readings = {
+                "pm2_5": reading["pm2_5"],
+                "pm10": reading["pm10"],
+                "temp": reading.get("temp"),
+                "humidity": reading.get("humidity"),
+            }
+            status = "active"
+
+            warning_msg = None
+            pm25_ceil, pm10_ceil = _get_spike_ceilings(current_time)
+            if reading["pm2_5"] > pm25_ceil or (reading["pm10"] or 0.0) > pm10_ceil:
+                warning_msg = WARNING_TEXT
+
+            hour_ago = [pt for pt in history if abs(pt["ts"] - (timestamp - 3600)) <= 1800]
+            if hour_ago and not warning_msg:
+                if aqi_data.get("aqi", 0) - hour_ago[0]["aqi"] > _get_warn_aqi_jump(current_time):
+                    warning_msg = WARNING_TEXT
+
+        else:
+            fetched = await fetch_openmeteo_live(sensor["lat"], sensor["lon"], zone_type)
+            comps = fetched["current_comps"]
+            aqi_data = calculate_overall_aqi(comps, zone_type=zone_type)
+            raw = None
+            history = fetched["history"]
+            source_name = "openmeteo air pollution api"
+            timestamp = current_time
+            readings = {
+                "pm2_5": comps.get("pm2_5"),
+                "pm10": comps.get("pm10"),
+                "temp": None,
+                "humidity": None,
+            }
+            status = live["status"] if live else "offline"
+
+            if live and live.get("warning"):
+                warning_msg = f"{live['warning']}. Using satellite-based estimates from Open-Meteo."
+            else:
+                warning_msg = (
+                    "This sensor is offline right now. Showing satellite-based "
+                    "estimates from Open-Meteo for its location."
+                )
+
+    except Exception as e:
+        print(f"Sensor zone {sensor_id} failed: {e}")
+        if cached:
+            return cached
+        raise e
+
+    payload = {
+        "zone_id": sensor_id,
+        "zone_name": sensor["name"],
+        **_place_fields(sensor),
+        "location_id": sensor["location_id"],
+        "sensor_status": status,
+        "source": source_name,
+        "timestamp_unix": timestamp,
+        "built_at": current_time,
+        "coordinates": {"lat": sensor["lat"], "lon": sensor["lon"]},
+        "averages_24h": _calculate_24h_averages(history, zone_type),
+        "averages_24h_raw": _raw_averages(history, zone_type) if raw else {},
+        "history": history,
+        "warning": warning_msg,
+        "weather": _sensor_weather(legacy, readings["pm2_5"]),
+        "readings": readings,
+        "raw": raw,
+        "raw_available": raw is not None,
+        **aqi_data,
+    }
+
+    _RAM_CACHE[sensor_id] = payload
+    return payload
+
+
+async def get_place_data(place_id: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Serve a sensor or a modelled estimate zone by its id."""
+    if place_id in SENSOR_ZONES:
+        return await get_sensor_zone_data(place_id, force_refresh=force_refresh)
+
+    place = ESTIMATE_ZONES[place_id]
+    data = await get_zone_data(
+        place["id"],
+        place["name"],
+        place["lat"],
+        place["lon"],
+        place.get("zone_type", "hills"),
+        force_refresh=force_refresh,
+    )
+    return {
+        **data,
+        **_place_fields(place),
+        "raw": None,
+        "raw_available": False,
+    }
+
+
 async def start_background_loop():
     """Standalone update loop. main.py runs its own, this is kept for scripts."""
     print("--- Background Scheduler Started ---")
@@ -1348,3 +1620,18 @@ async def update_all_zones_background():
 
     success_count = sum(1 for r in results if r)
     print(f"--- Update Cycle Complete ({success_count}/{len(ZONES)} zones updated) ---")
+
+    async def throttled_sensor(sensor_id):
+        """Rebuild one sensor's payload from the pass that just finished."""
+        async with semaphore:
+            try:
+                await get_sensor_zone_data(sensor_id, force_refresh=True)
+                return True
+            except Exception as e:
+                print(f"Failed to update sensor {sensor_id}: {e}")
+                return False
+
+    sensor_results = await asyncio.gather(*[throttled_sensor(sid) for sid in SENSOR_ZONES])
+    print(
+        f"--- Sensors Rebuilt ({sum(1 for r in sensor_results if r)}/{len(SENSOR_ZONES)}) ---"
+    )

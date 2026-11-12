@@ -48,3 +48,63 @@ AQI_BREAKPOINTS = _load_json("aqi_breakpoints.json")
 NODES_CONFIG = _load_json("nodes.json")
 SENSOR_INFO = _load_json("sensor_info.json")
 FESTIVALS = _load_json("festivals.json")
+
+
+def _sensor_coordinates(location_id: int, zone: Dict[str, Any]) -> Dict[str, float]:
+    """Where a sensor actually sits, falling back to its zone's centre."""
+    for sensor in SENSOR_INFO.get("sensors", []):
+        if sensor.get("location_id") != location_id:
+            continue
+
+        if sensor.get("latitude") is None or sensor.get("longitude") is None:
+            break
+
+        return {"lat": sensor["latitude"], "lon": sensor["longitude"]}
+
+    return {"lat": zone["lat"], "lon": zone["lon"]}
+
+
+def _build_sensor_zones() -> Dict[str, Dict[str, Any]]:
+    """Every enabled sensor as a zone of its own, keyed by its slug."""
+    sensors = {}
+
+    for zone_id, entry in NODES_CONFIG.items():
+        zone = ZONES.get(zone_id)
+        if not zone:
+            continue
+
+        nodes = [node for node in entry.get("nodes", []) if node.get("enabled", True)]
+
+        for node in nodes:
+            if len(nodes) > 1:
+                history_key = f"{zone_id}_{node['name']}"
+            else:
+                history_key = zone_id
+
+            sensors[node["id"]] = {
+                "id": node["id"],
+                "name": node["name"],
+                "kind": "sensor",
+                "provider": "airgradient",
+                **_sensor_coordinates(node["location_id"], zone),
+                "zone_type": zone.get("zone_type", "hills"),
+                "district": node.get("district", zone.get("district")),
+                "division": node.get("division", zone.get("division")),
+                "location_id": node["location_id"],
+                "legacy_zone": zone_id,
+                "node_name": node["name"],
+                "history_key": history_key,
+            }
+
+    return sensors
+
+
+SENSOR_ZONES = _build_sensor_zones()
+
+ESTIMATE_ZONES = {
+    zone_id: {**zone, "kind": "estimate"}
+    for zone_id, zone in ZONES.items()
+    if zone.get("provider") != "airgradient"
+}
+
+PLACES = {**SENSOR_ZONES, **ESTIMATE_ZONES}

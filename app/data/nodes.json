@@ -4,32 +4,40 @@
     "nodes": [
       {
         "location_id": 172681,
+        "id": "kanipora",
         "name": "Kanipora",
+        "district": "Budgam",
         "enabled": true
       },
       {
         "location_id": 207718,
+        "id": "bemina",
         "name": "Bemina",
         "enabled": true
       },
       {
         "location_id": 200478,
+        "id": "hazratbal",
         "name": "Hazratbal",
         "enabled": true
       },
       {
         "location_id": 199426,
+        "id": "jeelanabad-batpora",
         "name": "Jeelanabad, Batpora",
+        "district": "Budgam",
         "enabled": true
       },
       {
         "location_id": 210415,
+        "id": "brein-nishat",
         "name": "Brein Nishat",
         "enabled": true,
         "token_env_var": "PUBLIC_AIRGRADIENT_TOKEN"
       },
       {
         "location_id": 211204,
+        "id": "ahmadnagar",
         "name": "Ahmadnagar",
         "enabled": true
       }
@@ -40,21 +48,25 @@
     "nodes": [
       {
         "location_id": 182171,
+        "id": "talab-tillo",
         "name": "Talab Tillo",
         "enabled": true
       },
       {
         "location_id": 184303,
+        "id": "gandhi-nagar",
         "name": "Gandhi Nagar",
         "enabled": true
       },
       {
         "location_id": 195730,
+        "id": "channi-himmat",
         "name": "Channi Himmat",
         "enabled": true
       },
       {
         "location_id": 210604,
+        "id": "suchetgarh-rs-pura",
         "name": "Suchetgarh, RS Pura",
         "enabled": true
       }
@@ -65,6 +77,7 @@
     "nodes": [
       {
         "location_id": 197953,
+        "id": "nowshera",
         "name": "Nowshera",
         "enabled": true
       }
@@ -75,6 +88,7 @@
     "nodes": [
       {
         "location_id": 198158,
+        "id": "ahamshrief",
         "name": "Ahamshrief",
         "enabled": true
       }
@@ -85,6 +99,7 @@
     "nodes": [
       {
         "location_id": 198810,
+        "id": "kashtigarh",
         "name": "Kashtigarh",
         "enabled": true
       }
@@ -95,6 +110,7 @@
     "nodes": [
       {
         "location_id": 198850,
+        "id": "udhampur-city",
         "name": "Udhampur City",
         "enabled": true
       }
@@ -105,6 +121,7 @@
     "nodes": [
       {
         "location_id": 199009,
+        "id": "zero-waste-ladakh",
         "name": "Zero Waste Ladakh",
         "enabled": true
       }
@@ -115,6 +132,7 @@
     "nodes": [
       {
         "location_id": 199913,
+        "id": "vijaypur",
         "name": "Vijaypur",
         "enabled": true
       }
@@ -125,6 +143,7 @@
     "nodes": [
       {
         "location_id": 202541,
+        "id": "reasi-town-centre",
         "name": "Reasi Town Centre",
         "enabled": true
       }
@@ -135,6 +154,7 @@
     "nodes": [
       {
         "location_id": 205956,
+        "id": "central-kargil",
         "name": "Central Kargil",
         "enabled": true
       }
@@ -145,6 +165,7 @@
     "nodes": [
       {
         "location_id": 209677,
+        "id": "cherwan",
         "name": "Cherwan",
         "enabled": true
       }
@@ -155,6 +176,7 @@
     "nodes": [
       {
         "location_id": 211219,
+        "id": "billawar-kathua",
         "name": "Billawar, Kathua",
         "enabled": true
       }

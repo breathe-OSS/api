@@ -38,10 +38,10 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from app.core.config import ZONES, SENSOR_INFO
+from app.core.config import ZONES, SENSOR_INFO, PLACES, SENSOR_ZONES
 from app.core.database import VALID_METRICS, stream_historical_data, check_postgres_health
 from app.core.redis_client import check_redis_health
-from app.services.fetchers import get_zone_data
+from app.services.fetchers import get_zone_data, get_place_data
 from app.services.seasonal import get_zone_seasonal
 from app.services.weather import fetch_weather_history
 
@@ -178,6 +178,22 @@ async def _write_cache(cache_key: str, payload: Any, ttl: int) -> None:
         print(f"Redis cache save error: {e}")
 
 
+def _place_summary(place: Dict[str, Any]) -> Dict[str, Any]:
+    """What /zones lists about a sensor or an estimate zone."""
+    return {
+        "id": place["id"],
+        "name": place["name"],
+        "kind": place["kind"],
+        "provider": place.get("provider"),
+        "lat": place.get("lat"),
+        "lon": place.get("lon"),
+        "zone_type": place.get("zone_type", "hills"),
+        "district": place.get("district"),
+        "division": place.get("division"),
+        "legacy_zone": place.get("legacy_zone", place["id"]),
+    }
+
+
 def register_zone_routes(app: FastAPI) -> None:
     """Attach every route to the app. Called once from main."""
 
@@ -215,9 +231,24 @@ def register_zone_routes(app: FastAPI) -> None:
     for zid, z in ZONES.items():
         app.get(f"/aqi/{zid}")(_make_zone_handler(z))
 
+    def _make_sensor_handler(sensor_id: str) -> Callable[[], Any]:
+        """Build one sensor's flat path handler."""
+
+        async def _handler():
+            """Serve this sensor."""
+            return await get_place_data(sensor_id)
+
+        return _handler
+
+    for sid in SENSOR_ZONES:
+        app.get(f"/aqi/{sid}")(_make_sensor_handler(sid))
+
     @app.get("/aqi/zone/{zone_id}")
     async def get_zone_aqi(zone_id: str):
-        """Current readings for one zone."""
+        """Current readings for one zone, sensor or estimate."""
+        if zone_id in PLACES:
+            return await get_place_data(zone_id)
+
         if zone_id not in ZONES:
             raise HTTPException(status_code=404, detail="zone not found")
 
@@ -231,6 +262,10 @@ def register_zone_routes(app: FastAPI) -> None:
         ids: Optional[str] = Query(
             None, description="comma separated zone ids, every zone when left out"
         ),
+        layout: str = Query(
+            "zones",
+            description="'sensors' for every sensor and estimate zone when ids is left out",
+        ),
     ) -> dict:
         """Current readings for many zones in one request, same payload as /aqi/zone/{zone_id}.
 
@@ -242,9 +277,11 @@ def register_zone_routes(app: FastAPI) -> None:
         if ids:
             # dict.fromkeys drops repeats but keeps the order they were asked in
             wanted = list(dict.fromkeys(zid.strip() for zid in ids.split(",") if zid.strip()))
-            unknown = [zid for zid in wanted if zid not in ZONES]
+            unknown = [zid for zid in wanted if zid not in ZONES and zid not in PLACES]
             if unknown:
                 raise HTTPException(status_code=404, detail=f"zone not found: {', '.join(unknown)}")
+        elif layout == "sensors":
+            wanted = list(PLACES.keys())
         else:
             wanted = list(ZONES.keys())
 
@@ -255,9 +292,12 @@ def register_zone_routes(app: FastAPI) -> None:
 
         async def fetch(zone_id: str):
             """Serve one zone, or None if it fails."""
-            z = ZONES[zone_id]
             async with semaphore:
                 try:
+                    if zone_id in PLACES:
+                        return await get_place_data(zone_id)
+
+                    z = ZONES[zone_id]
                     return await get_zone_data(
                         z["id"], z["name"], z["lat"], z["lon"], z.get("zone_type", "hills")
                     )
@@ -269,8 +309,17 @@ def register_zone_routes(app: FastAPI) -> None:
         return {"zones": [r for r in results if r is not None]}
 
     @app.get("/zones")
-    async def list_zones() -> dict:
+    async def list_zones(
+        layout: str = Query(
+            "zones",
+            description="'sensors' lists every sensor and every estimate zone, with "
+            "district and division",
+        ),
+    ) -> dict:
         """List every zone with enough detail to draw it on a map."""
+        if layout == "sensors":
+            return {"zones": [_place_summary(place) for place in PLACES.values()]}
+
         return {
             "zones": [
                 {
@@ -293,6 +342,9 @@ def register_zone_routes(app: FastAPI) -> None:
     @app.get("/seasonal/{zone_id}")
     async def get_seasonal_route(zone_id: str):
         """Twelve month normals for a zone, from reanalysis."""
+        if zone_id in SENSOR_ZONES:
+            zone_id = SENSOR_ZONES[zone_id]["legacy_zone"]
+
         if zone_id not in ZONES:
             raise HTTPException(status_code=404, detail="zone not found")
 
@@ -321,7 +373,7 @@ def register_zone_routes(app: FastAPI) -> None:
         ),
     ):
         """Past weather for a zone, bucketed to line up with a readings chart."""
-        if zone_id not in ZONES:
+        if zone_id not in ZONES and zone_id not in SENSOR_ZONES:
             raise HTTPException(status_code=404, detail="zone not found")
 
         window = parse_window(time_range)
@@ -332,7 +384,7 @@ def register_zone_routes(app: FastAPI) -> None:
         if cached:
             return cached
 
-        z = ZONES[zone_id]
+        z = SENSOR_ZONES.get(zone_id) or ZONES[zone_id]
         time_range_sec = parse_time(time_range) if window is None else 0
         interval_sec = parse_time(interval)
 
@@ -401,6 +453,19 @@ def register_zone_routes(app: FastAPI) -> None:
         if not actual_metrics:
             actual_metrics = ["pm2_5", "pm10"]
 
+        store_key = location
+        if location in SENSOR_ZONES:
+            store_key = SENSOR_ZONES[location]["history_key"]
+
+        def rows():
+            """Stored buckets, labelled with the id they were asked for."""
+            for row in stream_historical_data(
+                store_key, time_range_sec, interval_sec, metrics_list, window
+            ):
+                if store_key != location:
+                    row["zone_id"] = location
+                yield row
+
         def generate_json():
             """Yield the json body a row at a time, tallying stats as it goes."""
             # the summary belongs at the end of the document because it can only
@@ -419,9 +484,7 @@ def register_zone_routes(app: FastAPI) -> None:
             sum_pm10 = 0
             count_pm10 = 0
 
-            for row in stream_historical_data(
-                location, time_range_sec, interval_sec, metrics_list, window
-            ):
+            for row in rows():
                 if not first:
                     yield ","
 
@@ -484,9 +547,7 @@ def register_zone_routes(app: FastAPI) -> None:
             writer.writerow(header)
             yield drain()
 
-            for row in stream_historical_data(
-                location, time_range_sec, interval_sec, metrics_list, window
-            ):
+            for row in rows():
                 writer.writerow([row.get(k, "") for k in header])
                 yield drain()
 
