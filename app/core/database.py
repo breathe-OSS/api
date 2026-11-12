@@ -67,7 +67,13 @@ VALID_METRICS = {
     "pm10": "pm10",
     "temp": "temp",
     "humidity": "humidity",
+    "pm2.5_raw": "pm2_5_raw",
+    "pm10_raw": "pm10_raw",
+    "temp_raw": "temp_raw",
+    "humidity_raw": "humidity_raw",
 }
+
+RAW_COLUMNS = ("pm2_5_raw", "pm10_raw", "temp_raw", "humidity_raw")
 
 DEFAULT_METRICS = ["pm2_5", "pm10"]
 
@@ -193,6 +199,10 @@ def init_db() -> None:
     if "humidity" not in columns:
         c.execute("ALTER TABLE sensor_readings ADD COLUMN humidity REAL")
 
+    for column in RAW_COLUMNS:
+        if column not in columns:
+            c.execute(f"ALTER TABLE sensor_readings ADD COLUMN {column} REAL")
+
     # pre-averaged 15 minute buckets, so a year long chart does not have to
     # aggregate a year of raw rows on every request.
     c.execute("""
@@ -206,6 +216,20 @@ def init_db() -> None:
             UNIQUE(zone_id, ts)
         )
     """)
+
+    if is_pg:
+        c.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='sensor_readings_15m'"
+        )
+        rollup_columns = [row["column_name"] for row in c.fetchall()]
+    else:
+        c.execute("PRAGMA table_info(sensor_readings_15m)")
+        rollup_columns = [row[1] for row in c.fetchall()]
+
+    for column in RAW_COLUMNS:
+        if column not in rollup_columns:
+            c.execute(f"ALTER TABLE sensor_readings_15m ADD COLUMN {column} REAL")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS seasonal_climatology (
@@ -281,8 +305,10 @@ def save_readings(readings: List[dict]) -> None:
         c.executemany(
             f"""
                 INSERT INTO sensor_readings
-                    (zone_id, timestamp, pm2_5, pm10, temp, humidity)
-                VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker})
+                    (zone_id, timestamp, pm2_5, pm10, temp, humidity,
+                     pm2_5_raw, pm10_raw, temp_raw, humidity_raw)
+                VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker},
+                        {marker}, {marker}, {marker}, {marker})
                 {conflict}
             """,
             [
@@ -293,6 +319,10 @@ def save_readings(readings: List[dict]) -> None:
                     r["pm10"],
                     r.get("temp"),
                     r.get("humidity"),
+                    r.get("pm2_5_raw"),
+                    r.get("pm10_raw"),
+                    r.get("temp_raw"),
+                    r.get("humidity_raw"),
                 )
                 for r in readings
             ],
@@ -317,7 +347,8 @@ def get_history(zone_id, hours=24) -> List[dict]:
 
     c.execute(
         f"""
-            SELECT timestamp as ts, pm2_5, pm10, temp, humidity
+            SELECT timestamp as ts, pm2_5, pm10, temp, humidity,
+                   pm2_5_raw, pm10_raw, temp_raw, humidity_raw
             FROM sensor_readings
             WHERE zone_id = {marker} AND timestamp > {marker}
             ORDER BY timestamp ASC
@@ -440,18 +471,25 @@ def refresh_15m_rollups() -> None:
 
     try:
         c.execute(f"""
-            INSERT INTO sensor_readings_15m (zone_id, ts, pm2_5, pm10, temp, humidity)
+            INSERT INTO sensor_readings_15m
+                (zone_id, ts, pm2_5, pm10, temp, humidity,
+                 pm2_5_raw, pm10_raw, temp_raw, humidity_raw)
             SELECT
                 zone_id,
                 CAST(timestamp / {ROLLUP_INTERVAL} AS INTEGER) * {ROLLUP_INTERVAL} as ts,
-                AVG(pm2_5), AVG(pm10), AVG(temp), AVG(humidity)
+                AVG(pm2_5), AVG(pm10), AVG(temp), AVG(humidity),
+                AVG(pm2_5_raw), AVG(pm10_raw), AVG(temp_raw), AVG(humidity_raw)
             FROM sensor_readings
             GROUP BY zone_id, CAST(timestamp / {ROLLUP_INTERVAL} AS INTEGER) * {ROLLUP_INTERVAL}
             ON CONFLICT (zone_id, ts) DO UPDATE SET
                 pm2_5 = excluded.pm2_5,
                 pm10 = excluded.pm10,
                 temp = excluded.temp,
-                humidity = excluded.humidity
+                humidity = excluded.humidity,
+                pm2_5_raw = excluded.pm2_5_raw,
+                pm10_raw = excluded.pm10_raw,
+                temp_raw = excluded.temp_raw,
+                humidity_raw = excluded.humidity_raw
         """)
         conn.commit()
 

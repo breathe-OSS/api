@@ -250,6 +250,27 @@ def _first_present(entry: Dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _as_float(value: Any) -> Optional[float]:
+    """A reading as a float, or None when the sensor did not send one."""
+    if value is None:
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _raw_fields(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """The uncorrected values airgradient sends next to the corrected ones."""
+    return {
+        "pm2_5_raw": _as_float(entry.get("pm02")),
+        "pm10_raw": _as_float(entry.get("pm10")),
+        "temp_raw": _as_float(entry.get("atmp")),
+        "humidity_raw": _as_float(entry.get("rhum")),
+    }
+
+
 def _parse_ag_timestamp(raw: Optional[str], fallback: float) -> float:
     """Read airgradient's ISO timestamp, falling back to now if it is unusable."""
     if not raw:
@@ -296,6 +317,7 @@ async def fetch_airgradient_history(
                     "ts": ts,
                     "pm2_5": float(pm25),
                     "pm10": float(pm10) if pm10 else 0.0,
+                    **_raw_fields(entry),
                 })
 
         return history
@@ -321,6 +343,10 @@ async def ensure_history_exists(zone_id: str, loc_id: int, token: str) -> None:
                 "zone_id": zone_id,
                 "pm2_5": pt["pm2_5"],
                 "pm10": pt["pm10"],
+                "pm2_5_raw": pt["pm2_5_raw"],
+                "pm10_raw": pt["pm10_raw"],
+                "temp_raw": pt["temp_raw"],
+                "humidity_raw": pt["humidity_raw"],
                 "timestamp": pt["ts"],
             }
             for pt in history
@@ -445,11 +471,31 @@ def _downsample_to_hourly(
             # the chart is drawn from those anyway.
             aqi_res = {"aqi": 0, "us_aqi": 0}
 
+        raw_comps = {
+            "pm2_5_raw": pt.get("pm2_5_raw"),
+            "pm10_raw": pt.get("pm10_raw"),
+            "temp_raw": pt.get("temp_raw"),
+            "humidity_raw": pt.get("humidity_raw"),
+        }
+
+        raw_aqi = {"aqi": None, "us_aqi": None}
+        if raw_comps["pm2_5_raw"] is not None:
+            try:
+                raw_aqi = calculate_overall_aqi(
+                    {"pm2_5": raw_comps["pm2_5_raw"], "pm10": raw_comps["pm10_raw"] or 0.0},
+                    zone_type=zone_type,
+                )
+            except Exception:
+                raw_aqi = {"aqi": None, "us_aqi": None}
+
         buckets[hour_ts] = {
             "ts": hour_ts,
             **hour_comps,
             "aqi": aqi_res.get("aqi", 0),
             "us_aqi": aqi_res.get("us_aqi", 0),
+            **raw_comps,
+            "aqi_raw": raw_aqi.get("aqi"),
+            "us_aqi_raw": raw_aqi.get("us_aqi"),
         }
 
     return [buckets[ts] for ts in sorted(buckets.keys())]
@@ -503,6 +549,7 @@ async def fetch_airgradient_common(
         # everywhere below.
         temp_val = _first_present(d, "atmp_corrected", "atmp")
         humid_val = _first_present(d, "rhum_corrected", "rhum")
+        raw_vals = _raw_fields(d)
 
         current_time = datetime.now().timestamp()
         node_cache_key = f"{zone_id}_{node_name}"
@@ -565,6 +612,7 @@ async def fetch_airgradient_common(
                 "pm10": float(pm10) if pm10 else 0.0,
                 "temp": float(temp_val) if temp_val is not None else None,
                 "humidity": float(humid_val) if humid_val is not None else None,
+                **raw_vals,
                 "timestamp": reading_ts,
             }])
 
@@ -781,6 +829,7 @@ async def fetch_multi_node_airgradient(
             "humidity": float(humid_val) if humid_val is not None else None,
             "timestamp": reading_ts,
             "node_name": node_name,
+            **_raw_fields(data),
             "history": _downsample_to_hourly(node_history_24h, zone_type=zone_type),
         })
         node_statuses.append({"node": node_name, "status": "active"})
@@ -801,6 +850,10 @@ async def fetch_multi_node_airgradient(
             "pm10": r["pm10"],
             "temp": r["temp"],
             "humidity": r["humidity"],
+            "pm2_5_raw": r["pm2_5_raw"],
+            "pm10_raw": r["pm10_raw"],
+            "temp_raw": r["temp_raw"],
+            "humidity_raw": r["humidity_raw"],
             "timestamp": r["timestamp"],
         }
         for r in valid_readings
