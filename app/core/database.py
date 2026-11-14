@@ -38,7 +38,12 @@ from typing import Dict, Iterator, List, Optional, Tuple
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from app.core.calibration import EPA_MATCH_ABSOLUTE, EPA_MATCH_RELATIVE, epa_pm25_sql
+from app.core.calibration import (
+    EPA_MATCH_ABSOLUTE,
+    EPA_MATCH_RELATIVE,
+    epa_pm25_sql,
+    sensor_uses_epa,
+)
 from app.core.config import NODES_CONFIG
 
 # only the particulates get homogenised. temperature and humidity are not
@@ -75,6 +80,9 @@ VALID_METRICS = {
 }
 
 RAW_COLUMNS = ("pm2_5_raw", "pm10_raw", "temp_raw", "humidity_raw")
+
+# calibration decides one sensor's day at a time, and days are counted in IST.
+IST_OFFSET = 19800
 
 DEFAULT_METRICS = ["pm2_5", "pm10"]
 
@@ -207,6 +215,10 @@ def init_db() -> None:
     # the PM2.5 airgradient sent, kept next to the recalibrated pm2_5.
     if "pm2_5_ag" not in columns:
         c.execute("ALTER TABLE sensor_readings ADD COLUMN pm2_5_ag REAL")
+
+    # set once a row's day has been through recalibrate_stored_pm25.
+    if "calibrated" not in columns:
+        c.execute("ALTER TABLE sensor_readings ADD COLUMN calibrated INTEGER")
 
     # pre-averaged 15 minute buckets, so a year long chart does not have to
     # aggregate a year of raw rows on every request.
@@ -361,7 +373,7 @@ def get_history(zone_id, hours=24) -> List[dict]:
     c.execute(
         f"""
             SELECT timestamp as ts, pm2_5, pm10, temp, humidity,
-                   pm2_5_raw, pm10_raw, temp_raw, humidity_raw
+                   pm2_5_raw, pm10_raw, temp_raw, humidity_raw, pm2_5_ag
             FROM sensor_readings
             WHERE zone_id = {marker} AND timestamp > {marker} AND pm2_5 IS NOT NULL
             ORDER BY timestamp ASC
@@ -442,37 +454,78 @@ def save_raw_backfill(readings: List[dict]) -> None:
 
 
 def recalibrate_stored_pm25() -> int:
-    """Put stored airgradient PM2.5 through calibrate_pm25, returning how many rows it went through.
+    """Decide stored airgradient PM2.5 one sensor day at a time, returning how many past days it redid.
 
-    Only rows that have raw PM2.5 and raw humidity and have not been through it
-    yet are touched, so it is cheap to run after every backfill pass. The value
-    airgradient sent is moved to pm2_5_ag first, so nothing is lost.
+    A day where airgradient was applying EPA keeps airgradient's values, a day
+    where it wasn't gets the EPA value worked out from raw, and a day that
+    can't be told is checked reading by reading. Only days with readings that
+    haven't been through it yet are looked at, so it is cheap to run after every
+    backfill pass. The value airgradient sent stays in pm2_5_ag.
     """
     conn = get_connection()
     c = conn.cursor()
     is_pg = _is_postgres(conn)
+    marker = _placeholder(is_pg)
 
     epa = epa_pm25_sql("pm2_5_raw", "humidity_raw", is_pg)
     larger = "GREATEST" if is_pg else "MAX"
     rounded = f"ROUND(CAST({epa} AS NUMERIC), 2)" if is_pg else f"ROUND({epa}, 2)"
+    matches = f"ABS(pm2_5_ag - {epa}) <= {larger}({EPA_MATCH_ABSOLUTE}, {EPA_MATCH_RELATIVE} * {epa})"
+    ready = "pm2_5_ag IS NOT NULL AND pm2_5_raw IS NOT NULL AND humidity_raw IS NOT NULL"
+    floor = "FLOOR" if is_pg else ""
+    day_of = f"CAST({floor}((timestamp + {IST_OFFSET}) / 86400.0) AS INTEGER)"
+    in_day = (
+        f"zone_id = {marker} AND timestamp >= {marker} AND timestamp < {marker} "
+        f"AND {day_of} = {marker} AND {ready}"
+    )
+    values = {
+        True: "pm2_5_ag",
+        False: rounded,
+        None: f"CASE WHEN {matches} THEN pm2_5_ag ELSE {rounded} END",
+    }
 
     try:
-        c.execute(f"""
+        c.execute("""
             UPDATE sensor_readings
-            SET pm2_5_ag = pm2_5,
-                pm2_5 = CASE
-                    WHEN ABS(pm2_5 - {epa}) <= {larger}({EPA_MATCH_ABSOLUTE}, {EPA_MATCH_RELATIVE} * {epa})
-                    THEN pm2_5
-                    ELSE {rounded}
-                END
+            SET pm2_5_ag = pm2_5
             WHERE pm2_5_ag IS NULL
               AND pm2_5 IS NOT NULL
               AND pm2_5_raw IS NOT NULL
               AND humidity_raw IS NOT NULL
         """)
-        changed = c.rowcount
+
+        c.execute(
+            f"SELECT DISTINCT zone_id, {day_of} AS day FROM sensor_readings WHERE calibrated IS NULL AND {ready}"
+        )
+        pending = {(dict(row)["zone_id"], int(dict(row)["day"])) for row in c.fetchall()}
+
+        recent = int((time.time() + IST_OFFSET) // 86400) - 1
+        past_days = 0
+
+        for zone_id, day in sorted(pending):
+            # the range only lets the index narrow things down. the day itself is
+            # matched by the same expression that found it.
+            window = (zone_id, day * 86400 - IST_OFFSET - 3600, (day + 1) * 86400 - IST_OFFSET + 3600, day)
+
+            c.execute(
+                f"SELECT pm2_5_ag, pm2_5_raw, humidity_raw FROM sensor_readings WHERE {in_day}",
+                window,
+            )
+            readings = [
+                (dict(row)["pm2_5_ag"], dict(row)["pm2_5_raw"], dict(row)["humidity_raw"])
+                for row in c.fetchall()
+            ]
+
+            c.execute(
+                f"UPDATE sensor_readings SET pm2_5 = {values[sensor_uses_epa(readings)]}, calibrated = 1 WHERE {in_day}",
+                window,
+            )
+
+            if day < recent:
+                past_days += 1
+
         conn.commit()
-        return changed
+        return past_days
 
     except Exception as e:
         print(f"DB Recalibration Error: {e}")

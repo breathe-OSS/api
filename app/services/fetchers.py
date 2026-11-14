@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from fastapi import HTTPException
 
-from app.core.calibration import calibrate_pm25
+from app.core.calibration import calibrate_pm25, sensor_uses_epa
 from app.core.config import ZONES, NODES_CONFIG, FESTIVALS, SENSOR_ZONES, ESTIMATE_ZONES
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
@@ -276,6 +276,17 @@ def _raw_fields(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
     }
 
 
+def _recent_uses_epa(
+    history: List[Dict[str, Any]],
+    ag_pm25: Optional[float],
+    raw_vals: Dict[str, Optional[float]],
+) -> Optional[bool]:
+    """sensor_uses_epa over a sensor's last day of stored readings plus the one just fetched."""
+    readings = [(r.get("pm2_5_ag"), r.get("pm2_5_raw"), r.get("humidity_raw")) for r in history]
+    readings.append((ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"]))
+    return sensor_uses_epa(readings)
+
+
 def _remember_node(
     history_key: str,
     status: str,
@@ -319,8 +330,14 @@ async def fetch_airgradient_history(
             print(f"AG History Failed: {r.status_code}")
             return []
 
+        entries = r.json()
+        uses_epa = sensor_uses_epa(
+            (_as_float(e.get("pm02_corrected")), _as_float(e.get("pm02")), _as_float(e.get("rhum")))
+            for e in entries
+        )
+
         history = []
-        for entry in r.json():
+        for entry in entries:
             ts = entry.get("timestamp", 0)
 
             # airgradient has returned both seconds and milliseconds over the
@@ -331,7 +348,7 @@ async def fetch_airgradient_history(
 
             raw = _raw_fields(entry)
             ag_pm25 = _as_float(entry.get("pm02_corrected"))
-            pm25 = calibrate_pm25(ag_pm25, raw["pm2_5_raw"], raw["humidity_raw"])
+            pm25 = calibrate_pm25(ag_pm25, raw["pm2_5_raw"], raw["humidity_raw"], uses_epa)
             pm10 = _first_present(entry, "pm10_corrected", "pm10")
 
             if pm25 is not None:
@@ -570,7 +587,8 @@ async def fetch_airgradient_common(
         # everywhere below.
         raw_vals = _raw_fields(d)
         ag_pm25 = _as_float(d.get("pm02_corrected"))
-        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"])
+        uses_epa = _recent_uses_epa(database.get_history(zone_id, hours=24), ag_pm25, raw_vals)
+        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"], uses_epa)
         pm10 = _first_present(d, "pm10_corrected", "pm10")
         temp_val = _first_present(d, "atmp_corrected", "atmp")
         humid_val = _first_present(d, "rhum_corrected", "rhum")
@@ -817,7 +835,9 @@ async def fetch_multi_node_airgradient(
 
         raw_vals = _raw_fields(data)
         ag_pm25 = _as_float(data.get("pm02_corrected"))
-        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"])
+        node_history_24h = database.get_history(node_zone_id, hours=24)
+        uses_epa = _recent_uses_epa(node_history_24h, ag_pm25, raw_vals)
+        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"], uses_epa)
         pm10 = _first_present(data, "pm10_corrected", "pm10")
 
         if pm25 is None:
@@ -860,8 +880,6 @@ async def fetch_multi_node_airgradient(
             _SPIKE_CACHE[node_cache_key] = current_time
             _remember_node(node_zone_id, "spike_detected", warning=spike_warnings[-1])
             continue
-
-        node_history_24h = database.get_history(node_zone_id, hours=24)
 
         pm25_jump = _is_jump_spike(node_zone_id, reading_ts, pm25_val, node_history_24h)
         if pm25_jump is not None:

@@ -26,16 +26,25 @@
 #
 # airgradient lets each sensor pick its own correction, so the network ends up
 # with the EPA formula on some and a batch correction that only applies in clean
-# air on the rest. every reading is checked against the EPA formula worked out
-# from its own raw PM2.5 and raw humidity. if airgradient's value already
-# matches, it is kept, otherwise the EPA value replaces it.
+# air on the rest. what a sensor is doing is decided from its calm readings,
+# where airgradient's value and the raw reading line up closely in time. if
+# those match the EPA formula worked out from raw PM2.5 and raw humidity,
+# airgradient's values are kept, spikes included. otherwise the EPA value
+# replaces them.
 
-from typing import Optional
+from typing import Iterable, Optional, Tuple
 
 # how close airgradient's value has to be to the EPA value to count as the EPA
 # formula, in ug/m3 and as a share of the EPA value, whichever is larger.
 EPA_MATCH_ABSOLUTE = 1.0
 EPA_MATCH_RELATIVE = 0.03
+
+# raw PM2.5 under this counts as calm. above it, a stored raw value and
+# airgradient's value can come from slightly different moments of a spike.
+CALM_LIMIT = 200.0
+REGIME_MIN_READINGS = 6
+REGIME_AIRGRADIENT_SHARE = 0.7
+REGIME_BREATHE_SHARE = 0.3
 
 
 def epa_pm25(pm: float, rh: float) -> float:
@@ -67,23 +76,65 @@ def matches_epa(value: float, epa: float) -> bool:
     return abs(value - epa) <= max(EPA_MATCH_ABSOLUTE, EPA_MATCH_RELATIVE * epa)
 
 
+def sensor_uses_epa(
+    readings: Iterable[Tuple[Optional[float], Optional[float], Optional[float]]],
+) -> Optional[bool]:
+    """Whether airgradient applied the EPA formula across a sensor's readings.
+
+    Takes (airgradient value, raw PM2.5, raw humidity) for each reading and
+    only looks at the calm ones. None when there are too few of them, or when
+    the share that matches EPA is in between.
+    """
+    matched = 0
+    total = 0
+
+    for corrected, raw, humidity_raw in readings:
+        if corrected is None or raw is None or humidity_raw is None:
+            continue
+
+        if raw >= CALM_LIMIT:
+            continue
+
+        total += 1
+        if matches_epa(corrected, epa_pm25(raw, humidity_raw)):
+            matched += 1
+
+    if total < REGIME_MIN_READINGS:
+        return None
+
+    share = matched / total
+    if share >= REGIME_AIRGRADIENT_SHARE:
+        return True
+
+    if share <= REGIME_BREATHE_SHARE:
+        return False
+
+    return None
+
+
 def calibrate_pm25(
     corrected: Optional[float],
     raw: Optional[float],
     humidity_raw: Optional[float],
+    uses_epa: Optional[bool] = None,
 ) -> Optional[float]:
     """The PM2.5 to serve for one reading.
 
-    airgradient's own value when it already applied the EPA formula, or when
-    there is no raw reading to work from. the EPA value otherwise.
+    uses_epa is what sensor_uses_epa decided for the sensor. airgradient's own
+    value when it was applying EPA, or when there is no raw reading to work
+    from, the EPA value when it wasn't. when it can't be told, the reading is
+    checked on its own.
     """
     if raw is None or humidity_raw is None:
         if corrected is not None:
             return corrected
         return raw
 
+    if uses_epa is True and corrected is not None:
+        return corrected
+
     epa = epa_pm25(raw, humidity_raw)
-    if corrected is not None and matches_epa(corrected, epa):
+    if uses_epa is None and corrected is not None and matches_epa(corrected, epa):
         return corrected
 
     return round(epa, 2)
