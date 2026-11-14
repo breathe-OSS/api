@@ -43,8 +43,15 @@ EPA_MATCH_RELATIVE = 0.03
 # airgradient's value can come from slightly different moments of a spike.
 CALM_LIMIT = 200.0
 REGIME_MIN_READINGS = 6
-REGIME_AIRGRADIENT_SHARE = 0.7
-REGIME_BREATHE_SHARE = 0.3
+
+# bumped whenever the rules below change, so stored days decided under the old
+# ones are decided again.
+CALIBRATION_VERSION = 2
+
+# the median of airgradient's value over the EPA value. sensors on EPA sit at
+# 1.00 every day, sensors on the batch correction between 1.19 and 2.17.
+REGIME_EPA_BAND = 0.1
+REGIME_OTHER_BAND = 0.15
 
 
 def epa_pm25(pm: float, rh: float) -> float:
@@ -82,11 +89,13 @@ def sensor_uses_epa(
     """Whether airgradient applied the EPA formula across a sensor's readings.
 
     Takes (airgradient value, raw PM2.5, raw humidity) for each reading and
-    only looks at the calm ones. None when there are too few of them, or when
-    the share that matches EPA is in between.
+    looks at the median of airgradient's value over the EPA value across the
+    calm ones. Single readings can be off because the stored raw value and
+    airgradient's value don't always come from the same moment, so the median
+    is used rather than a count of exact matches. None when there are too few
+    calm readings, or when the median is in between.
     """
-    matched = 0
-    total = 0
+    ratios = []
 
     for corrected, raw, humidity_raw in readings:
         if corrected is None or raw is None or humidity_raw is None:
@@ -95,18 +104,22 @@ def sensor_uses_epa(
         if raw >= CALM_LIMIT:
             continue
 
-        total += 1
-        if matches_epa(corrected, epa_pm25(raw, humidity_raw)):
-            matched += 1
+        epa = epa_pm25(raw, humidity_raw)
+        if epa < 1:
+            continue
 
-    if total < REGIME_MIN_READINGS:
+        ratios.append(corrected / epa)
+
+    if len(ratios) < REGIME_MIN_READINGS:
         return None
 
-    share = matched / total
-    if share >= REGIME_AIRGRADIENT_SHARE:
+    ratios.sort()
+    median = ratios[len(ratios) // 2]
+
+    if abs(median - 1) <= REGIME_EPA_BAND:
         return True
 
-    if share <= REGIME_BREATHE_SHARE:
+    if abs(median - 1) >= REGIME_OTHER_BAND:
         return False
 
     return None

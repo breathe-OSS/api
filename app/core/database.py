@@ -39,6 +39,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from app.core.calibration import (
+    CALIBRATION_VERSION,
     EPA_MATCH_ABSOLUTE,
     EPA_MATCH_RELATIVE,
     epa_pm25_sql,
@@ -216,7 +217,7 @@ def init_db() -> None:
     if "pm2_5_ag" not in columns:
         c.execute("ALTER TABLE sensor_readings ADD COLUMN pm2_5_ag REAL")
 
-    # set once a row's day has been through recalibrate_stored_pm25.
+    # the CALIBRATION_VERSION a row's day was last decided under.
     if "calibrated" not in columns:
         c.execute("ALTER TABLE sensor_readings ADD COLUMN calibrated INTEGER")
 
@@ -495,7 +496,8 @@ def recalibrate_stored_pm25() -> int:
         """)
 
         c.execute(
-            f"SELECT DISTINCT zone_id, {day_of} AS day FROM sensor_readings WHERE calibrated IS NULL AND {ready}"
+            f"SELECT DISTINCT zone_id, {day_of} AS day FROM sensor_readings "
+            f"WHERE (calibrated IS NULL OR calibrated < {CALIBRATION_VERSION}) AND {ready}"
         )
         pending = {(dict(row)["zone_id"], int(dict(row)["day"])) for row in c.fetchall()}
 
@@ -517,7 +519,7 @@ def recalibrate_stored_pm25() -> int:
             ]
 
             c.execute(
-                f"UPDATE sensor_readings SET pm2_5 = {values[sensor_uses_epa(readings)]}, calibrated = 1 WHERE {in_day}",
+                f"UPDATE sensor_readings SET pm2_5 = {values[sensor_uses_epa(readings)]}, calibrated = {CALIBRATION_VERSION} WHERE {in_day}",
                 window,
             )
 
