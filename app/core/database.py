@@ -94,7 +94,7 @@ ROLLUP_INTERVAL = 900
 # rows pulled per round trip while streaming.
 STREAM_CHUNK = 1000
 
-DB_FILE = os.path.join(
+DB_FILE = os.getenv("BREATHE_DB_FILE") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "breathe.db"
 )
 
