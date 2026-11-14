@@ -33,7 +33,7 @@ import io
 import json
 import re
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -51,6 +51,9 @@ from app.services.weather import fetch_weather_history
 SEASONAL_CACHE_TTL = 21600
 WEATHER_CACHE_TTL = 3600
 HISTORY_CACHE_TTL = 3600
+
+# the most buckets one page of history or weather can ask for.
+PAGE_LIMIT_MAX = 10000
 
 # metrics worked out per bucket from the particulates rather than stored.
 COMPUTED_METRICS = {
@@ -213,6 +216,59 @@ def _bucket_us_aqi(pm2_5: Optional[float], pm10: Optional[float]) -> Optional[in
         comps["pm10"] = pm10
 
     return calculate_overall_aqi(comps).get("us_aqi")
+
+
+def _page(items: Iterable[Dict[str, Any]], limit: int, cursor: Optional[int]) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+    """Up to limit items after the cursor, and the cursor for the page after, or None on the last one."""
+    page = []
+    more = False
+
+    for item in items:
+        if cursor is not None and item["ts"] <= cursor:
+            continue
+
+        if len(page) == limit:
+            more = True
+            break
+
+        page.append(item)
+
+    next_cursor = page[-1]["ts"] if more and page else None
+    return page, next_cursor
+
+
+def _new_tallies(keys: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Empty running max, min and mean for each metric."""
+    return {key: {"max": None, "min": None, "sum": 0.0, "count": 0} for key in keys}
+
+
+def _tally(tallies: Dict[str, Dict[str, Any]], row: Dict[str, Any]) -> None:
+    """Fold one row into the running stats."""
+    for key, tally in tallies.items():
+        value = row.get(key)
+        if value is None:
+            continue
+
+        if tally["max"] is None or value > tally["max"]:
+            tally["max"] = value
+        if tally["min"] is None or value < tally["min"]:
+            tally["min"] = value
+        tally["sum"] += value
+        tally["count"] += 1
+
+
+def _stats(tallies: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """The stats object for a response, empty if no row had any of the metrics."""
+    stats = {}
+    if any(tally["count"] > 0 for tally in tallies.values()):
+        for key, tally in tallies.items():
+            stats[f"max_{key}"] = tally["max"]
+            stats[f"min_{key}"] = tally["min"]
+            if tally["count"] > 0:
+                stats[f"avg_{key}"] = round(tally["sum"] / tally["count"], 2)
+            else:
+                stats[f"avg_{key}"] = None
+    return stats
 
 
 def register_zone_routes(app: FastAPI) -> None:
@@ -392,6 +448,12 @@ def register_zone_routes(app: FastAPI) -> None:
         interval: str = Path(
             ..., examples=["1h"], description="Grouping interval (e.g., 1h, 4h, 1d)"
         ),
+        limit: Optional[int] = Query(
+            None, ge=1, le=PAGE_LIMIT_MAX, description="Return at most this many points per page"
+        ),
+        cursor: Optional[int] = Query(
+            None, ge=0, description="The next_cursor from the previous page"
+        ),
     ):
         """Past weather for a zone, bucketed to line up with a readings chart."""
         if zone_id not in ZONES and zone_id not in SENSOR_ZONES:
@@ -402,21 +464,28 @@ def register_zone_routes(app: FastAPI) -> None:
         cache_key = f"weather:{zone_id}:{time_range}:{interval}"
 
         cached = await _read_cache(cache_key)
-        if cached:
+        if cached and limit is None:
             return cached
 
-        z = SENSOR_ZONES.get(zone_id) or ZONES[zone_id]
-        time_range_sec = parse_time(time_range) if window is None else 0
-        interval_sec = parse_time(interval)
+        if cached:
+            payload = json.loads(cached.body)
+        else:
+            z = SENSOR_ZONES.get(zone_id) or ZONES[zone_id]
+            time_range_sec = parse_time(time_range) if window is None else 0
+            interval_sec = parse_time(interval)
 
-        payload = await fetch_weather_history(
-            z["lat"], z["lon"], time_range_sec, interval_sec, window
-        )
-        payload["zone_id"] = zone_id
+            payload = await fetch_weather_history(
+                z["lat"], z["lon"], time_range_sec, interval_sec, window
+            )
+            payload["zone_id"] = zone_id
 
-        await _write_cache(cache_key, payload, WEATHER_CACHE_TTL)
+            await _write_cache(cache_key, payload, WEATHER_CACHE_TTL)
 
-        return payload
+        if limit is None:
+            return payload
+
+        page, next_cursor = _page(payload.get("points", []), limit, cursor)
+        return {**payload, "points": page, "next_cursor": next_cursor}
 
     @app.get("/historical-data/{location}/{time_range}/{interval}/{metrics}")
     async def get_historical_data_route(
@@ -436,8 +505,18 @@ def register_zone_routes(app: FastAPI) -> None:
             ..., examples=["pm2.5,pm10"], description="Comma-separated metrics to fetch"
         ),
         format: str = Query("json", examples=["json"], description="Output format (json or csv)"),
+        limit: Optional[int] = Query(
+            None, ge=1, le=PAGE_LIMIT_MAX, description="Return at most this many buckets per page"
+        ),
+        cursor: Optional[int] = Query(
+            None, ge=0, description="The next_cursor from the previous page"
+        ),
     ):
-        """Stream a window of readings as json or csv, caching the finished body."""
+        """Stream a window of readings as json or csv, caching the finished body.
+
+        With limit, one page is returned instead of the whole window, along with
+        next_cursor for the page after it.
+        """
         window = parse_window(time_range)
 
         cache_key = f"hist:{location}:{time_range}:{interval}:{metrics}:{format.lower()}"
@@ -448,7 +527,7 @@ def register_zone_routes(app: FastAPI) -> None:
 
         from app.core.redis_client import redis_client
 
-        if redis_client:
+        if redis_client and limit is None:
             cached_data = await redis_client.get(cache_key)
             if cached_data:
                 headers = {"Cache-Control": "public, max-age=3600"}
@@ -507,6 +586,8 @@ def register_zone_routes(app: FastAPI) -> None:
 
                 yield out
 
+        stat_keys = ["pm2_5", "pm10"] + actual_metrics
+
         def generate_json():
             """Yield the json body a row at a time, tallying stats as it goes."""
             # the summary belongs at the end of the document because it can only
@@ -515,9 +596,7 @@ def register_zone_routes(app: FastAPI) -> None:
             yield '{"data": ['
             first = True
 
-            tallies = {}
-            for key in ["pm2_5", "pm10"] + actual_metrics:
-                tallies[key] = {"max": None, "min": None, "sum": 0.0, "count": 0}
+            tallies = _new_tallies(stat_keys)
 
             for row in rows():
                 if not first:
@@ -525,30 +604,9 @@ def register_zone_routes(app: FastAPI) -> None:
 
                 yield json.dumps(row)
                 first = False
+                _tally(tallies, row)
 
-                for key, tally in tallies.items():
-                    value = row.get(key)
-                    if value is None:
-                        continue
-
-                    if tally["max"] is None or value > tally["max"]:
-                        tally["max"] = value
-                    if tally["min"] is None or value < tally["min"]:
-                        tally["min"] = value
-                    tally["sum"] += value
-                    tally["count"] += 1
-
-            stats = {}
-            if any(tally["count"] > 0 for tally in tallies.values()):
-                for key, tally in tallies.items():
-                    stats[f"max_{key}"] = tally["max"]
-                    stats[f"min_{key}"] = tally["min"]
-                    if tally["count"] > 0:
-                        stats[f"avg_{key}"] = round(tally["sum"] / tally["count"], 2)
-                    else:
-                        stats[f"avg_{key}"] = None
-
-            yield '], "stats": ' + json.dumps(stats) + "}"
+            yield '], "stats": ' + json.dumps(_stats(tallies)) + "}"
 
         def generate_csv():
             """Yield the csv body a row at a time."""
@@ -577,6 +635,38 @@ def register_zone_routes(app: FastAPI) -> None:
                 yield drain()
 
         headers = {"Cache-Control": "public, max-age=3600"}
+
+        if limit is not None:
+            # a page is at most limit buckets, so it is built whole. that lets the
+            # csv carry next_cursor in a header, which a stream can't once the
+            # body has started.
+            source = rows()
+            page, next_cursor = await asyncio.to_thread(_page, source, limit, cursor)
+            source.close()
+
+            if format.lower() == "csv":
+                buffer = io.StringIO()
+                writer = csv.writer(buffer, lineterminator="\n")
+                header = ["zone_id", "ts"] + actual_metrics
+                writer.writerow(header)
+                for row in page:
+                    writer.writerow([row.get(k, "") for k in header])
+
+                headers["Content-Disposition"] = (
+                    f'attachment; filename="historical_{safe_location}.csv"'
+                )
+                if next_cursor is not None:
+                    headers["X-Next-Cursor"] = str(next_cursor)
+                return Response(content=buffer.getvalue(), media_type="text/csv", headers=headers)
+
+            tallies = _new_tallies(stat_keys)
+            for row in page:
+                _tally(tallies, row)
+
+            return JSONResponse(
+                content={"data": page, "stats": _stats(tallies), "next_cursor": next_cursor},
+                headers=headers,
+            )
 
         # the generators below run in a worker thread, so the loop is captured
         # here while we are still on it.
