@@ -175,14 +175,17 @@ def init_db() -> None:
     is_pg = _is_postgres(conn)
 
     # the schema is identical across both backends apart from how the
-    # autoincrementing key is spelled, so it is written once.
+    # autoincrementing key and the timestamp type are spelled, so it is written
+    # once. postgres REAL is 4 bytes, which rounds today's unix times to the
+    # nearest 128 seconds.
     primary_key = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    timestamp_type = "DOUBLE PRECISION" if is_pg else "REAL"
 
     c.execute(f"""
         CREATE TABLE IF NOT EXISTS sensor_readings (
             id {primary_key},
             zone_id TEXT NOT NULL,
-            timestamp REAL NOT NULL,
+            timestamp {timestamp_type} NOT NULL,
             pm2_5 REAL,
             pm10 REAL,
             temp REAL,
@@ -194,6 +197,14 @@ def init_db() -> None:
     # temp and humidity were added after the table existed, so older deployments
     # need them bolting on.
     if is_pg:
+        c.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name='sensor_readings' AND column_name='timestamp'"
+        )
+        row = c.fetchone()
+        if row and row["data_type"] == "real":
+            c.execute("ALTER TABLE sensor_readings ALTER COLUMN timestamp TYPE DOUBLE PRECISION")
+
         c.execute(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name='sensor_readings'"
