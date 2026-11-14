@@ -166,11 +166,11 @@ The short list is below. For response fields, time range syntax, errors and exam
 
 - **Weather History**:
   `GET /weather-history/{zone_id}/{time_range}/{interval}`
-  Returns time buckets tagged with a weather condition (`rain`, `snow`, `fog`, `thunderstorm`, `clear`, `cloudy`) and precipitation totals, aligned with `/historical-data` bucketing so clients can filter AQI history by weather. Example: `/weather-history/srinagar/1w/1h`. Also takes the calendar windows described below. Buckets start at `anchor + n * interval`, and `anchor` is `0` for rolling ranges.
+  Returns time buckets tagged with a weather condition (`rain`, `snow`, `fog`, `thunderstorm`, `clear`, `cloudy`) and precipitation totals, aligned with `/historical-data` bucketing so clients can filter AQI history by weather. Example: `/weather-history/srinagar/1w/1h`. Also takes the calendar windows described below. Buckets start at `anchor + n * interval`, and `anchor` is `0` for rolling ranges. Takes `?limit=` and `?cursor=` the same way as `/historical-data`.
 
 - **Historical Data**:
-  `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv`
-  Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu_city/30d/15m/pm2.5,pm10?format=json`
+  `GET /historical-data/{location}/{time_range}/{interval}/{metrics}?format=json|csv&limit=&cursor=`
+  Streams historical downsampled sensor readings. Supports memory-safe CSV or JSON streaming, fast-lane rollups (for 15m intervals), and standard Cache-Control headers to protect the DB from heavy loads. Example: `/historical-data/jammu_city/30d/15m/pm2.5,pm10?format=json`. Pass `limit` (1 to 10,000) to get one page of buckets instead of the whole stream, with `next_cursor` in the JSON (or an `X-Next-Cursor` header for CSV) to pass back as `cursor` for the next page. It's `null` on the last page.
 
 - **Calendar Windows**:
   `time_range` on `/historical-data` and `/weather-history` also takes a fixed window instead of a rolling duration. Dates are read in IST, buckets are counted from the start of the window, and a malformed or backwards window returns `400`.
