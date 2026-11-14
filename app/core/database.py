@@ -203,6 +203,10 @@ def init_db() -> None:
         if column not in columns:
             c.execute(f"ALTER TABLE sensor_readings ADD COLUMN {column} REAL")
 
+    # the PM2.5 airgradient sent, kept next to the recalibrated pm2_5.
+    if "pm2_5_ag" not in columns:
+        c.execute("ALTER TABLE sensor_readings ADD COLUMN pm2_5_ag REAL")
+
     # pre-averaged 15 minute buckets, so a year long chart does not have to
     # aggregate a year of raw rows on every request.
     c.execute("""
@@ -313,9 +317,9 @@ def save_readings(readings: List[dict]) -> None:
             f"""
                 INSERT INTO sensor_readings
                     (zone_id, timestamp, pm2_5, pm10, temp, humidity,
-                     pm2_5_raw, pm10_raw, temp_raw, humidity_raw)
+                     pm2_5_raw, pm10_raw, temp_raw, humidity_raw, pm2_5_ag)
                 VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker},
-                        {marker}, {marker}, {marker}, {marker})
+                        {marker}, {marker}, {marker}, {marker}, {marker})
                 {conflict}
             """,
             [
@@ -330,6 +334,7 @@ def save_readings(readings: List[dict]) -> None:
                     r.get("pm10_raw"),
                     r.get("temp_raw"),
                     r.get("humidity_raw"),
+                    r.get("pm2_5_ag"),
                 )
                 for r in readings
             ],

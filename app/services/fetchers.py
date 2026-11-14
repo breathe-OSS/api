@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from fastapi import HTTPException
 
+from app.core.calibration import calibrate_pm25
 from app.core.config import ZONES, NODES_CONFIG, FESTIVALS, SENSOR_ZONES, ESTIMATE_ZONES
 from app.core.conversions import calculate_overall_aqi
 from app.core import database
@@ -328,17 +329,18 @@ async def fetch_airgradient_history(
             if ts > 9999999999:
                 ts = ts / 1000
 
-            # the corrected values are the calibrated ones and are preferred
-            # wherever the sensor reports them.
-            pm25 = _first_present(entry, "pm02_corrected", "pm02")
+            raw = _raw_fields(entry)
+            ag_pm25 = _as_float(entry.get("pm02_corrected"))
+            pm25 = calibrate_pm25(ag_pm25, raw["pm2_5_raw"], raw["humidity_raw"])
             pm10 = _first_present(entry, "pm10_corrected", "pm10")
 
             if pm25 is not None:
                 history.append({
                     "ts": ts,
                     "pm2_5": float(pm25),
+                    "pm2_5_ag": ag_pm25,
                     "pm10": float(pm10) if pm10 else 0.0,
-                    **_raw_fields(entry),
+                    **raw,
                 })
 
         return history
@@ -363,6 +365,7 @@ async def ensure_history_exists(zone_id: str, loc_id: int, token: str) -> None:
             {
                 "zone_id": zone_id,
                 "pm2_5": pt["pm2_5"],
+                "pm2_5_ag": pt["pm2_5_ag"],
                 "pm10": pt["pm10"],
                 "pm2_5_raw": pt["pm2_5_raw"],
                 "pm10_raw": pt["pm10_raw"],
@@ -563,14 +566,14 @@ async def fetch_airgradient_common(
         if token == "PUBLIC_TOKEN" and isinstance(d, list):
             d = next((s for s in d if s.get("locationId") == loc_id), {})
 
-        pm25 = _first_present(d, "pm02_corrected", "pm02")
-        pm10 = _first_present(d, "pm10_corrected", "pm10")
-
         # the api sometimes hands these back as strings, hence the float() calls
         # everywhere below.
+        raw_vals = _raw_fields(d)
+        ag_pm25 = _as_float(d.get("pm02_corrected"))
+        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"])
+        pm10 = _first_present(d, "pm10_corrected", "pm10")
         temp_val = _first_present(d, "atmp_corrected", "atmp")
         humid_val = _first_present(d, "rhum_corrected", "rhum")
-        raw_vals = _raw_fields(d)
 
         current_time = datetime.now().timestamp()
         node_cache_key = f"{zone_id}_{node_name}"
@@ -630,6 +633,7 @@ async def fetch_airgradient_common(
             database.save_readings([{
                 "zone_id": zone_id,
                 "pm2_5": float(pm25),
+                "pm2_5_ag": ag_pm25,
                 "pm10": float(pm10) if pm10 else 0.0,
                 "temp": float(temp_val) if temp_val is not None else None,
                 "humidity": float(humid_val) if humid_val is not None else None,
@@ -811,7 +815,9 @@ async def fetch_multi_node_airgradient(
                 continue
             data = sensor_data
 
-        pm25 = _first_present(data, "pm02_corrected", "pm02")
+        raw_vals = _raw_fields(data)
+        ag_pm25 = _as_float(data.get("pm02_corrected"))
+        pm25 = calibrate_pm25(ag_pm25, raw_vals["pm2_5_raw"], raw_vals["humidity_raw"])
         pm10 = _first_present(data, "pm10_corrected", "pm10")
 
         if pm25 is None:
@@ -882,7 +888,8 @@ async def fetch_multi_node_airgradient(
             "humidity": float(humid_val) if humid_val is not None else None,
             "timestamp": reading_ts,
             "node_name": node_name,
-            **_raw_fields(data),
+            "pm2_5_ag": ag_pm25,
+            **raw_vals,
             "history": _downsample_to_hourly(node_history_24h, zone_type=zone_type),
         })
         node_statuses.append({"node": node_name, "status": "active"})
@@ -900,6 +907,7 @@ async def fetch_multi_node_airgradient(
         {
             "zone_id": f"{zone_id}_{r['node_name']}",
             "pm2_5": r["pm2_5"],
+            "pm2_5_ag": r["pm2_5_ag"],
             "pm10": r["pm10"],
             "temp": r["temp"],
             "humidity": r["humidity"],
