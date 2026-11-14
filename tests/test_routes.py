@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from app.api import routes
 from app.core import database
 from app.core.config import ESTIMATE_ZONES, PLACES, SENSOR_ZONES, ZONES
-from app.core.conversions import get_us_aqi
+from app.core.conversions import calculate_overall_aqi, get_us_aqi
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -299,6 +299,17 @@ def test_historical_computed_us_aqi(client):
     row = body["data"][0]
 
     assert row["us_aqi"] == max(get_us_aqi("pm2_5", 75.0), get_us_aqi("pm10", 120.0))
+    assert "pm2_5" not in row
+
+
+def test_historical_computed_naqi(client):
+    _seed("doda_town", [(75.0, 120.0)])
+
+    body = client.get("/historical-data/doda_town/1d/15m/naqi,us_aqi").json()
+    row = body["data"][0]
+
+    assert row["naqi"] == calculate_overall_aqi({"pm2_5": 75.0, "pm10": 120.0})["aqi"]
+    assert row["naqi"] != row["us_aqi"]
     assert "pm2_5" not in row
 
 

@@ -59,6 +59,16 @@ PAGE_LIMIT_MAX = 10000
 COMPUTED_METRICS = {
     "us_aqi": ("pm2.5", "pm10"),
     "us_aqi_raw": ("pm2.5_raw", "pm10_raw"),
+    "naqi": ("pm2.5", "pm10"),
+    "naqi_raw": ("pm2.5_raw", "pm10_raw"),
+}
+
+# which field of calculate_overall_aqi each computed metric reads.
+COMPUTED_INDEX = {
+    "us_aqi": "us_aqi",
+    "us_aqi_raw": "us_aqi",
+    "naqi": "aqi",
+    "naqi_raw": "aqi",
 }
 
 DEFAULT_RANGE_SECONDS = 86400
@@ -204,8 +214,8 @@ def _place_summary(place: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _bucket_us_aqi(pm2_5: Optional[float], pm10: Optional[float]) -> Optional[int]:
-    """The US AQI of one bucket's mean concentrations."""
+def _bucket_index(pm2_5: Optional[float], pm10: Optional[float], index: str) -> Optional[int]:
+    """The US AQI or NAQI of one bucket's mean concentrations."""
     if pm2_5 is None and pm10 is None:
         return None
 
@@ -215,7 +225,7 @@ def _bucket_us_aqi(pm2_5: Optional[float], pm10: Optional[float]) -> Optional[in
     if pm10 is not None:
         comps["pm10"] = pm10
 
-    return calculate_overall_aqi(comps).get("us_aqi")
+    return calculate_overall_aqi(comps).get(index)
 
 
 def _page(items: Iterable[Dict[str, Any]], limit: int, cursor: Optional[int]) -> Tuple[List[Dict[str, Any]], Optional[int]]:
@@ -576,7 +586,7 @@ def register_zone_routes(app: FastAPI) -> None:
 
                 for name in computed:
                     pm2_5_col, pm10_col = (VALID_METRICS[s] for s in COMPUTED_METRICS[name])
-                    value = _bucket_us_aqi(row.get(pm2_5_col), row.get(pm10_col))
+                    value = _bucket_index(row.get(pm2_5_col), row.get(pm10_col), COMPUTED_INDEX[name])
                     if value is not None:
                         row[name] = value
 
