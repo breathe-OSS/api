@@ -57,6 +57,7 @@ api/
     │   └── routes.py
     ├── core/                   # Config, database, cache, conversions
     │   ├── __init__.py
+    │   ├── calibration.py
     │   ├── config.py
     │   ├── database.py
     │   ├── conversions.py
@@ -82,6 +83,8 @@ api/
   Generates all `/aqi/<zone_id>` endpoints dynamically based on `zones.json`.
 - `app/core/database.py`
   Handles data persistence using **PostgreSQL** (production) or **SQLite** (local development). Stores sensor readings, temperature, and humidity for historical graph plotting. Also handles Continuous Aggregations (15-minute rollups) via `refresh_15m_rollups` to serve historical queries with high performance. Also stores per-node offsets (`node_offsets`), recomputed daily. `/historical-data` uses them to correct multi-sensor zones, so the series doesn't jump when a sensor joins or drops out.
+- `app/core/calibration.py`
+  Puts every AirGradient sensor on the same PM2.5 correction, the US EPA 2021 formula with its 2022 extension for smoke. Each sensor can be set to a different correction on AirGradient's side, so every reading's corrected value is checked against the EPA formula worked out from its own raw PM2.5 and raw humidity. If it matches, AirGradient already applied EPA and the value is kept. If it doesn't, the EPA value is served instead. Stored readings go through the same check once their raw values are in, and AirGradient's original value is kept in `pm2_5_ag`.
 - `app/core/config.py`
   Loads environment variables and configuration from `zones.json`, `nodes.json`, `sensor_info.json`, `aqi_breakpoints.json`, and `festivals.json`.
 - `app/core/conversions.py`
