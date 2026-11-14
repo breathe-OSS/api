@@ -38,6 +38,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from app.core.calibration import EPA_MATCH_ABSOLUTE, EPA_MATCH_RELATIVE, epa_pm25_sql
 from app.core.config import NODES_CONFIG
 
 # only the particulates get homogenised. temperature and humidity are not
@@ -435,6 +436,47 @@ def save_raw_backfill(readings: List[dict]) -> None:
 
     except Exception as e:
         print(f"DB Raw Backfill Save Error: {e}")
+
+    finally:
+        conn.close()
+
+
+def recalibrate_stored_pm25() -> int:
+    """Put stored airgradient PM2.5 through calibrate_pm25, returning how many rows it went through.
+
+    Only rows that have raw PM2.5 and raw humidity and have not been through it
+    yet are touched, so it is cheap to run after every backfill pass. The value
+    airgradient sent is moved to pm2_5_ag first, so nothing is lost.
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    is_pg = _is_postgres(conn)
+
+    epa = epa_pm25_sql("pm2_5_raw", "humidity_raw", is_pg)
+    larger = "GREATEST" if is_pg else "MAX"
+    rounded = f"ROUND(CAST({epa} AS NUMERIC), 2)" if is_pg else f"ROUND({epa}, 2)"
+
+    try:
+        c.execute(f"""
+            UPDATE sensor_readings
+            SET pm2_5_ag = pm2_5,
+                pm2_5 = CASE
+                    WHEN ABS(pm2_5 - {epa}) <= {larger}({EPA_MATCH_ABSOLUTE}, {EPA_MATCH_RELATIVE} * {epa})
+                    THEN pm2_5
+                    ELSE {rounded}
+                END
+            WHERE pm2_5_ag IS NULL
+              AND pm2_5 IS NOT NULL
+              AND pm2_5_raw IS NOT NULL
+              AND humidity_raw IS NOT NULL
+        """)
+        changed = c.rowcount
+        conn.commit()
+        return changed
+
+    except Exception as e:
+        print(f"DB Recalibration Error: {e}")
+        return 0
 
     finally:
         conn.close()
@@ -970,12 +1012,13 @@ def get_node_offsets(zone_id: str) -> dict:
     return result
 
 
-def refresh_stale_node_offsets() -> None:
+def refresh_stale_node_offsets(force: bool = False) -> None:
     """Recompute sensor offsets for any zone whose stored values are older than a day.
 
     Offsets move slowly, so this is cheap to skip. It does need to run after a
     new sensor is installed, otherwise that sensor is averaged in uncorrected
-    and reintroduces exactly the step this is here to remove.
+    and reintroduces exactly the step this is here to remove. force recomputes
+    every zone, for when stored readings have just been recalibrated.
     """
     conn = get_connection()
     c = conn.cursor()
@@ -998,7 +1041,7 @@ def refresh_stale_node_offsets() -> None:
         conn.close()
 
     for zone_id in NODES_CONFIG:
-        if zone_id in fresh:
+        if zone_id in fresh and not force:
             continue
 
         if len(zone_node_names(zone_id)) < 2:

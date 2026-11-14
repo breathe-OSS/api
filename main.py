@@ -65,13 +65,18 @@ async def periodic_updates() -> None:
             # these are imported here rather than at module scope because both
             # modules import from app.core, and pulling them in at the top would
             # close an import cycle.
-            from app.core.database import refresh_15m_rollups, refresh_stale_node_offsets
+            from app.core.database import (
+                recalibrate_stored_pm25,
+                refresh_15m_rollups,
+                refresh_stale_node_offsets,
+            )
             from app.services.seasonal import refresh_stale_climatology
 
             # the rollups are blocking sqlite work, so they go to a worker thread
             # instead of stalling the event loop for everyone else.
+            recalibrated = await asyncio.to_thread(recalibrate_stored_pm25)
             await asyncio.to_thread(refresh_15m_rollups)
-            await asyncio.to_thread(refresh_stale_node_offsets)
+            await asyncio.to_thread(refresh_stale_node_offsets, recalibrated > 0)
 
             await refresh_stale_climatology()
 
