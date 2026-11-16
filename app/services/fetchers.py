@@ -489,20 +489,42 @@ def _downsample_to_hourly(
     data: List[Dict[str, Any]],
     zone_type: str = "urban",
 ) -> List[Dict[str, Any]]:
-    """Collapse raw readings to one per hour. The last reading in an hour wins."""
+    """Collapse raw readings to one per hour, each field the mean of that hour."""
     if not data:
         return []
 
-    buckets = {}
+    keys = ("pm2_5", "pm10", "temp", "humidity", "pm2_5_raw", "pm10_raw", "temp_raw", "humidity_raw")
+    sums: Dict[int, Dict[str, float]] = {}
+    counts: Dict[int, Dict[str, int]] = {}
+
     for pt in data:
         dt = datetime.fromtimestamp(pt["ts"])
         hour_ts = int(dt.replace(minute=0, second=0, microsecond=0).timestamp())
+        hour_sums = sums.setdefault(hour_ts, {})
+        hour_counts = counts.setdefault(hour_ts, {})
+
+        for key in keys:
+            value = pt.get(key)
+            if value is None:
+                continue
+            hour_sums[key] = hour_sums.get(key, 0.0) + value
+            hour_counts[key] = hour_counts.get(key, 0) + 1
+
+    out = []
+    for hour_ts in sorted(sums.keys()):
+        means = {}
+        for key in keys:
+            count = counts[hour_ts].get(key)
+            if count:
+                means[key] = round(sums[hour_ts][key] / count, 2)
+            else:
+                means[key] = None
 
         hour_comps = {
-            "pm2_5": pt["pm2_5"],
-            "pm10": pt["pm10"],
-            "temp": pt.get("temp"),
-            "humidity": pt.get("humidity"),
+            "pm2_5": means["pm2_5"],
+            "pm10": means["pm10"],
+            "temp": means["temp"],
+            "humidity": means["humidity"],
         }
 
         try:
@@ -513,10 +535,10 @@ def _downsample_to_hourly(
             aqi_res = {"aqi": 0, "us_aqi": 0}
 
         raw_comps = {
-            "pm2_5_raw": pt.get("pm2_5_raw"),
-            "pm10_raw": pt.get("pm10_raw"),
-            "temp_raw": pt.get("temp_raw"),
-            "humidity_raw": pt.get("humidity_raw"),
+            "pm2_5_raw": means["pm2_5_raw"],
+            "pm10_raw": means["pm10_raw"],
+            "temp_raw": means["temp_raw"],
+            "humidity_raw": means["humidity_raw"],
         }
 
         raw_aqi = {"aqi": None, "us_aqi": None}
@@ -529,7 +551,7 @@ def _downsample_to_hourly(
             except Exception:
                 raw_aqi = {"aqi": None, "us_aqi": None}
 
-        buckets[hour_ts] = {
+        out.append({
             "ts": hour_ts,
             **hour_comps,
             "aqi": aqi_res.get("aqi", 0),
@@ -537,9 +559,9 @@ def _downsample_to_hourly(
             **raw_comps,
             "aqi_raw": raw_aqi.get("aqi"),
             "us_aqi_raw": raw_aqi.get("us_aqi"),
-        }
+        })
 
-    return [buckets[ts] for ts in sorted(buckets.keys())]
+    return out
 
 
 async def fetch_airgradient_common(

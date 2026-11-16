@@ -134,20 +134,24 @@ def test_resolve_airgradient_token(monkeypatch):
     assert fetchers._resolve_airgradient_token({"token_env_var": "SOME_AG_TOKEN"}) == ("secret", "SOME_AG_TOKEN")
 
 
-def test_downsample_keeps_last_reading_per_hour():
+def test_downsample_averages_each_hour():
     hour = _local_hour() - 7200
     data = [
         {"ts": hour + 60, "pm2_5": 10.0, "pm10": 20.0},
-        {"ts": hour + 1800, "pm2_5": 40.0, "pm10": 50.0, "pm2_5_raw": 60.0},
+        {"ts": hour + 900, "pm2_5": 400.0, "pm10": 420.0, "pm2_5_raw": 60.0},
+        {"ts": hour + 1800, "pm2_5": 40.0, "pm10": 50.0},
         {"ts": hour + 3700, "pm2_5": 5.0, "pm10": 5.0},
     ]
 
     out = fetchers._downsample_to_hourly(data)
 
     assert [p["ts"] for p in out] == [hour, hour + 3600]
-    assert out[0]["pm2_5"] == 40.0
-    assert out[0]["us_aqi"] == calculate_overall_aqi({"pm2_5": 40.0, "pm10": 50.0})["us_aqi"]
+    assert out[0]["pm2_5"] == 150.0
+    assert out[0]["pm10"] == 163.33
+    assert out[0]["us_aqi"] == calculate_overall_aqi({"pm2_5": 150.0, "pm10": 163.33})["us_aqi"]
+    assert out[0]["pm2_5_raw"] == 60.0
     assert out[0]["us_aqi_raw"] == get_us_aqi("pm2_5", 60.0)
+    assert out[1]["pm2_5"] == 5.0
     assert out[1]["aqi_raw"] is None
     assert fetchers._downsample_to_hourly([]) == []
 
