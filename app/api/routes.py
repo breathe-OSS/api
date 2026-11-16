@@ -43,7 +43,7 @@ from app.core.conversions import calculate_overall_aqi
 from app.core.database import VALID_METRICS, stream_historical_data, check_postgres_health
 from app.core.redis_client import check_redis_health
 from app.services.fetchers import get_zone_data, get_place_data
-from app.services.forecast import FORECAST_ZONES, get_zone_forecast
+from app.services.forecast import FORECAST_ZONES, get_zone_forecast, get_zone_track_record
 from app.services.seasonal import get_zone_seasonal
 from app.services.weather import fetch_weather_history
 
@@ -53,6 +53,7 @@ SEASONAL_CACHE_TTL = 21600
 WEATHER_CACHE_TTL = 3600
 HISTORY_CACHE_TTL = 3600
 FORECAST_CACHE_TTL = 300
+TRACK_RECORD_CACHE_TTL = 900
 
 # the most buckets one page of history or weather can ask for.
 PAGE_LIMIT_MAX = 10000
@@ -469,6 +470,33 @@ def register_zone_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=503, detail="no recent readings to forecast from")
 
         await _write_cache(cache_key, payload, FORECAST_CACHE_TTL)
+
+        return payload
+
+    @app.get("/forecast/{zone_id}/track-record")
+    async def get_forecast_track_record_route(
+        zone_id: str,
+        days: int = Query(7, ge=1, le=30, description="How many days back to grade"),
+    ):
+        """How the forecast did over the last few days, replayed from stored readings."""
+        if zone_id in SENSOR_ZONES:
+            zone_id = SENSOR_ZONES[zone_id]["legacy_zone"]
+
+        if zone_id not in FORECAST_ZONES:
+            raise HTTPException(status_code=404, detail="no forecast for this zone")
+
+        cache_key = f"forecast-record:{zone_id}:{days}"
+
+        cached = await _read_cache(cache_key)
+        if cached:
+            cached.headers["Cache-Control"] = f"public, max-age={TRACK_RECORD_CACHE_TTL}"
+            return cached
+
+        payload = await get_zone_track_record(zone_id, days)
+        if payload is None:
+            raise HTTPException(status_code=503, detail="no readings to grade")
+
+        await _write_cache(cache_key, payload, TRACK_RECORD_CACHE_TTL)
 
         return payload
 

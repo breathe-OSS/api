@@ -65,7 +65,8 @@ def test_readings_inside_bucket_are_averaged():
 
     payload = forecast.forecast_from_history("jammu_city", rows, now=NOW)
 
-    assert payload["current"] == {"pm2_5": 20.0, "pm10": 30.0}
+    assert payload["current"]["pm2_5"] == 20.0
+    assert payload["current"]["pm10"] == 30.0
 
 
 def test_missing_day_before_falls_back_to_latest():
@@ -131,3 +132,57 @@ def test_route_rejects_other_zones(client):
 
 def test_route_without_recent_readings_is_503(client):
     assert client.get("/forecast/srinagar").status_code == 503
+
+
+@pytest.mark.parametrize("aqi, category", [(0, 0), (50, 0), (51, 1), (100, 1), (101, 2), (150, 2), (151, 3), (300, 4), (301, 5)])
+def test_us_category(aqi, category):
+    assert forecast.us_category(aqi) == category
+
+
+def test_forecast_carries_recent_hours():
+    rows = _rows((LATEST - i * 900, 40.0, 80.0) for i in range(100))
+
+    payload = forecast.forecast_from_history("jammu_city", rows, now=NOW)
+
+    assert len(payload["recent"]) == forecast.RECENT_HOURS + 1
+    assert payload["recent"][-1]["ts"] == LATEST // 3600 * 3600
+    assert payload["recent"][0]["pm2_5"] == 40.0
+    assert payload["current"]["us_aqi"] == forecast.us_aqi({"pm2_5": 40.0, "pm10": 80.0})
+
+
+def test_track_record_flat_air_is_always_right():
+    rows = _rows((LATEST - i * 900, 20.0, 30.0) for i in range(3 * 96))
+
+    record = forecast.track_record_from_history("jammu_city", rows, days=1)
+
+    assert record["overall"]["right_rate"] == 1.0
+    for horizon in record["horizons"]:
+        assert horizon["forecasts"] == 96
+        assert horizon["mean_miss_pm2_5"] == 0.0
+    assert len(record["series"]["60"]) == 24
+
+
+def test_track_record_counts_a_category_jump_as_wrong():
+    rows = _rows((LATEST - i * 900, 20.0, 30.0) for i in range(3 * 96))
+    rows.append({"ts": LATEST, "pm2_5": 300.0, "pm10": 30.0})
+    rows = [r for r in rows if not (r["ts"] == LATEST and r["pm2_5"] == 20.0)]
+
+    record = forecast.track_record_from_history("jammu_city", rows, days=1)
+    one_hour = record["horizons"][0]
+
+    assert one_hour["horizon_minutes"] == 60
+    assert one_hour["forecasts"] == 96
+    assert one_hour["right"] == 95
+    assert one_hour["persistence_right_rate"] == round(95 / 96, 4)
+
+
+def test_track_record_route(client, fake_redis):
+    _seed_zone("srinagar", 30.0, 60.0)
+
+    response = client.get("/forecast/kanipora/track-record?days=7")
+
+    assert response.status_code == 200
+    assert response.json()["zone_id"] == "srinagar"
+    assert "forecast-record:srinagar:7" in fake_redis.store
+    assert client.get("/forecast/kanipora/track-record?days=90").status_code == 422
+    assert client.get("/forecast/kashtigarh/track-record").status_code == 404
