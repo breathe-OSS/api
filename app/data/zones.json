@@ -152,7 +152,7 @@
   "poonch_town": {
     "id": "poonch_town",
     "name": "Poonch",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 33.7690,
     "lon": 74.0920,
     "zone_type": "hills",

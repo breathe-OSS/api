@@ -180,5 +180,16 @@
         "enabled": true
       }
     ]
+  },
+  "poonch_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 214015,
+        "id": "old-city-poonch",
+        "name": "Old City, Poonch",
+        "enabled": true
+      }
+    ]
   }
 }
