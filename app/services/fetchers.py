@@ -61,6 +61,12 @@ _NODE_LIVE = {}
 CACHE_DURATION = 900
 SPIKE_GRACE_PERIOD = 3600
 
+# airgradient's current endpoint is one instant, which swings by hundreds of
+# µg/m³ within a minute when a stove or fire is next to the sensor. live
+# values and stored rows are the mean of the past readings in this window
+# instead, which matches the poll interval so stored rows tile the day.
+AVERAGE_WINDOW = 900
+
 # a reading older than this is treated as the sensor being down rather than as
 # the current state of the air.
 MAX_READING_AGE = 3600
@@ -313,6 +319,96 @@ def _parse_ag_timestamp(raw: Optional[str], fallback: float) -> float:
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
     except Exception:
         return fallback
+
+
+def _entry_timestamp(entry: Dict[str, Any]) -> Optional[float]:
+    """A past entry's time in unix seconds, whichever form airgradient sent it in."""
+    raw = entry.get("timestamp")
+    if isinstance(raw, (int, float)):
+        if raw > 9999999999:
+            return raw / 1000
+        return float(raw)
+
+    ts = _parse_ag_timestamp(raw, 0)
+    if ts <= 0:
+        return None
+    return ts
+
+
+def _window_mean(
+    entries: List[Dict[str, Any]],
+    uses_epa: Optional[bool],
+    end_ts: float,
+    window: float = AVERAGE_WINDOW,
+) -> Optional[Dict[str, float]]:
+    """Mean of each field over the past entries in the window ending at end_ts.
+
+    Only fields that had a value come back, so callers can keep their own
+    value for anything missing. None when no entry in the window had PM2.5.
+    """
+    sums: Dict[str, float] = {}
+    counts: Dict[str, int] = {}
+
+    for entry in entries:
+        ts = _entry_timestamp(entry)
+        if ts is None:
+            continue
+        if ts <= end_ts - window or ts > end_ts + 60:
+            continue
+
+        raw = _raw_fields(entry)
+        ag_pm25 = _as_float(entry.get("pm02_corrected"))
+        values = {
+            "pm2_5": calibrate_pm25(ag_pm25, raw["pm2_5_raw"], raw["humidity_raw"], uses_epa),
+            "pm2_5_ag": ag_pm25,
+            "pm10": _as_float(_first_present(entry, "pm10_corrected", "pm10")),
+            "temp": _as_float(_first_present(entry, "atmp_corrected", "atmp")),
+            "humidity": _as_float(_first_present(entry, "rhum_corrected", "rhum")),
+            **raw,
+        }
+
+        for key, value in values.items():
+            if value is None:
+                continue
+            sums[key] = sums.get(key, 0.0) + float(value)
+            counts[key] = counts.get(key, 0) + 1
+
+    if not counts.get("pm2_5"):
+        return None
+
+    return {key: round(sums[key] / counts[key], 2) for key in sums}
+
+
+async def _fetch_recent_entries(
+    client: httpx.AsyncClient,
+    loc_id: int,
+    token: Optional[str],
+    now: float,
+) -> List[Dict[str, Any]]:
+    """The last stretch of a sensor's past readings, or nothing when they can't be had."""
+    if not token or token == "PUBLIC_TOKEN":
+        return []
+
+    params = {
+        "token": token,
+        "from": _ag_basic_time(now - AVERAGE_WINDOW - 300),
+        "to": _ag_basic_time(now + 60),
+    }
+
+    try:
+        r = await client.get(f"{AG_BASE_URL}/locations/{loc_id}/measures/past", params=params)
+    except Exception as e:
+        print(f"AG recent readings failed for {loc_id}: {e}")
+        return []
+
+    if r.status_code != 200:
+        print(f"AG recent readings for {loc_id} got {r.status_code}")
+        return []
+
+    data = r.json()
+    if not isinstance(data, list):
+        return []
+    return data
 
 
 async def fetch_airgradient_history(
@@ -590,9 +686,10 @@ async def fetch_airgradient_common(
 
         om_params = {"latitude": lat, "longitude": lon, **OM_GAS_PARAMS}
 
-        ag_resp, om_resp = await asyncio.gather(
+        ag_resp, om_resp, recent = await asyncio.gather(
             client.get(curr_url),
             client.get(AIR_QUALITY_URL, params=om_params),
+            _fetch_recent_entries(client, loc_id, token, datetime.now().timestamp()),
         )
 
     current_comps = {}
@@ -634,6 +731,15 @@ async def fetch_airgradient_common(
         reading_ts = _parse_ag_timestamp(d.get("timestamp"), current_time)
         if reading_ts != current_time:
             current_comps["_ag_timestamp"] = reading_ts
+
+        mean = _window_mean(recent, uses_epa, reading_ts)
+        if pm25 is not None and mean is not None:
+            pm25 = mean["pm2_5"]
+            ag_pm25 = mean.get("pm2_5_ag", ag_pm25)
+            pm10 = mean.get("pm10", pm10)
+            temp_val = mean.get("temp", temp_val)
+            humid_val = mean.get("humidity", humid_val)
+            raw_vals = {key: mean.get(key, value) for key, value in raw_vals.items()}
 
         if pm25 is not None:
             pm25_val = float(pm25)
@@ -801,8 +907,18 @@ async def fetch_multi_node_airgradient(
         om_params = {"latitude": lat, "longitude": lon, **OM_GAS_PARAMS}
         curr_tasks.append(client.get(AIR_QUALITY_URL, params=om_params))
 
+        recent_tasks = [
+            _fetch_recent_entries(
+                client, node["location_id"], _resolve_node_token(node, token), current_time
+            )
+            for node in nodes
+        ]
+
         # return_exceptions so one dead sensor cannot take the whole zone down.
-        results = await asyncio.gather(*curr_tasks, return_exceptions=True)
+        results, recent_results = await asyncio.gather(
+            asyncio.gather(*curr_tasks, return_exceptions=True),
+            asyncio.gather(*recent_tasks),
+        )
 
     # open-meteo was appended last, so it comes back last.
     om_resp = results[-1]
@@ -884,6 +1000,18 @@ async def fetch_multi_node_airgradient(
             _remember_node(node_zone_id, "stale")
             continue
 
+        temp_val = _first_present(data, "atmp_corrected", "atmp")
+        humid_val = _first_present(data, "rhum_corrected", "rhum")
+
+        mean = _window_mean(recent_results[i], uses_epa, reading_ts)
+        if mean is not None:
+            pm25 = mean["pm2_5"]
+            ag_pm25 = mean.get("pm2_5_ag", ag_pm25)
+            pm10 = mean.get("pm10", pm10)
+            temp_val = mean.get("temp", temp_val)
+            humid_val = mean.get("humidity", humid_val)
+            raw_vals = {key: mean.get(key, value) for key, value in raw_vals.items()}
+
         pm25_val = pm25
         pm10_val = pm10 if pm10 else 0.0
 
@@ -917,9 +1045,6 @@ async def fetch_multi_node_airgradient(
             _SPIKE_CACHE[node_cache_key] = current_time
             _remember_node(node_zone_id, "spike_detected", warning=spike_warnings[-1])
             continue
-
-        temp_val = _first_present(data, "atmp_corrected", "atmp")
-        humid_val = _first_present(data, "rhum_corrected", "rhum")
 
         valid_readings.append({
             "pm2_5": pm25_val,

@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -154,6 +154,109 @@ def test_downsample_averages_each_hour():
     assert out[1]["pm2_5"] == 5.0
     assert out[1]["aqi_raw"] is None
     assert fetchers._downsample_to_hourly([]) == []
+
+
+def _iso(ts):
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def test_entry_timestamp_forms():
+    assert fetchers._entry_timestamp({"timestamp": "2026-11-14T10:00:00.000Z"}) == 1794650400.0
+    assert fetchers._entry_timestamp({"timestamp": 1794650400000}) == 1794650400.0
+    assert fetchers._entry_timestamp({"timestamp": 1794650400}) == 1794650400.0
+    assert fetchers._entry_timestamp({"timestamp": "garbage"}) is None
+    assert fetchers._entry_timestamp({}) is None
+
+
+def test_window_mean_only_counts_the_window():
+    end = 1794650400.0
+    entries = [
+        {"timestamp": _iso(end - 2000), "pm02_corrected": 900, "pm10": 900},
+        {"timestamp": _iso(end - 600), "pm02_corrected": 20, "pm10": 30, "atmp": 10, "rhum": 50},
+        {"timestamp": _iso(end - 300), "pm02_corrected": 30, "pm10": 40, "atmp": 12},
+        {"timestamp": (end - 60) * 1000, "pm02_corrected": 40, "pm10": None},
+        {"timestamp": _iso(end + 600), "pm02_corrected": 900},
+    ]
+
+    mean = fetchers._window_mean(entries, True, end)
+
+    assert mean["pm2_5"] == 30.0
+    assert mean["pm2_5_ag"] == 30.0
+    assert mean["pm10"] == 35.0
+    assert mean["temp"] == 11.0
+    assert mean["humidity"] == 50.0
+    assert "pm2_5_raw" not in mean
+
+
+def test_window_mean_without_readings_is_none():
+    assert fetchers._window_mean([], True, 1794650400.0) is None
+    assert fetchers._window_mean([{"timestamp": _iso(1794650400.0 - 60)}], True, 1794650400.0) is None
+
+
+class FakeAirGradientClient:
+    def __init__(self, current, past, *args, **kwargs):
+        self.current = current
+        self.past = past
+        self.requests = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, params=None):
+        self.requests.append(url)
+        if "measures/current" in url:
+            return FakeResponse(self.current)
+        if "measures/past" in url:
+            return FakeResponse(self.past)
+        return FakeResponse({}, status_code=500)
+
+
+def test_single_sensor_serves_and_stores_window_mean(monkeypatch, no_festivals):
+    now = time.time()
+    current = {"timestamp": _iso(now - 30), "pm02_corrected": 409, "pm10": 412}
+    past = [
+        {"timestamp": _iso(now - 700), "pm02_corrected": 20, "pm10": 30},
+        {"timestamp": _iso(now - 400), "pm02_corrected": 30, "pm10": 40},
+        {"timestamp": _iso(now - 100), "pm02_corrected": 40, "pm10": 50},
+    ]
+
+    async def no_refill(*args):
+        return None
+
+    monkeypatch.setattr(fetchers, "ensure_history_exists", no_refill)
+    monkeypatch.setattr(
+        fetchers.httpx, "AsyncClient", lambda *a, **k: FakeAirGradientClient(current, past)
+    )
+
+    result = asyncio.run(
+        fetchers.fetch_airgradient_common("mean_zone", 1, "token", 0.0, 0.0, node_name="Mean")
+    )
+
+    assert result["current_comps"]["pm2_5"] == 30.0
+    assert result["current_comps"]["pm10"] == 40.0
+    assert [row["pm2_5"] for row in database.get_history("mean_zone", hours=1)] == [30.0]
+
+
+def test_single_sensor_without_past_keeps_snapshot(monkeypatch, no_festivals):
+    now = time.time()
+    current = {"timestamp": _iso(now - 30), "pm02_corrected": 45, "pm10": 60}
+
+    async def no_refill(*args):
+        return None
+
+    monkeypatch.setattr(fetchers, "ensure_history_exists", no_refill)
+    monkeypatch.setattr(
+        fetchers.httpx, "AsyncClient", lambda *a, **k: FakeAirGradientClient(current, [])
+    )
+
+    result = asyncio.run(
+        fetchers.fetch_airgradient_common("snapshot_zone", 1, "token", 0.0, 0.0, node_name="Snap")
+    )
+
+    assert result["current_comps"]["pm2_5"] == 45.0
 
 
 def test_24h_average_index_is_index_of_mean_concentration():
