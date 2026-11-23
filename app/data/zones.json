@@ -182,7 +182,7 @@
   "ramban_town": {
     "id": "ramban_town",
     "name": "Ramban",
-    "provider": "openmeteo",
+    "provider": "airgradient",
     "lat": 33.2420,
     "lon": 75.2450,
     "zone_type": "hills",

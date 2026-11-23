@@ -230,6 +230,17 @@
       "latitude": 33.7712,
       "longitude": 74.0886,
       "installation_date": "Nov 16, 2026"
+    },
+    {
+      "name": "Maitra, Ramban",
+      "zone": "Ramban",
+      "location_id": 215289,
+      "provider": "AirGradient",
+      "model": "O-1PST",
+      "is_kit": false,
+      "latitude": 33.2308,
+      "longitude": 75.2423,
+      "installation_date": "Nov 23, 2026"
     }
   ]
 }

@@ -191,5 +191,16 @@
         "enabled": true
       }
     ]
+  },
+  "ramban_town": {
+    "token_env_var": "JAMMU_AIRGRADIENT_TOKEN",
+    "nodes": [
+      {
+        "location_id": 215289,
+        "id": "maitra-ramban",
+        "name": "Maitra, Ramban",
+        "enabled": true
+      }
+    ]
   }
 }
